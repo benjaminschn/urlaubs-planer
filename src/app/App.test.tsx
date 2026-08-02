@@ -4,13 +4,15 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { createFakeGateway } from "../test/fake-gateway";
 import { createFakeTripGateway } from "../test/fake-trip-gateway";
+import { createFakeDocumentGateway } from "../test/fake-document-gateway";
 
 describe("geschützter Einstieg", () => {
   it("zeigt bei einem direkten Deep Link zuerst keine privaten Inhalte und behält das Ziel nach MFA", async () => {
     window.location.hash = "#/documents";
     const fake = createFakeGateway();
     const trip = createFakeTripGateway();
-    render(<App gateway={fake.gateway} tripGateway={trip.gateway} />);
+    const documents = createFakeDocumentGateway();
+    render(<App gateway={fake.gateway} tripGateway={trip.gateway} documentGateway={documents.gateway} />);
 
     expect(screen.queryByRole("heading", { name: "Testreise" })).not.toBeInTheDocument();
     const user = userEvent.setup();
@@ -20,7 +22,7 @@ describe("geschützter Einstieg", () => {
     await user.type(await screen.findByLabelText("Bestätigungscode"), "123456");
     await user.click(screen.getByRole("button", { name: "Bestätigen" }));
 
-    expect(await screen.findByText("Dokumente folgen in einer späteren Ausbaustufe.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Dokumente" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dokumente" })).toHaveAttribute("aria-current", "page");
     expect(window.location.hash).toBe("#/documents");
   });

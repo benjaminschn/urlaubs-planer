@@ -80,11 +80,12 @@ export function createAuthController(gateway: AuthGateway): AuthController {
         throw assurance.error;
       }
 
-      const mfaRequired =
-        assurance.nextLevel === "aal2" && assurance.currentLevel !== "aal2";
-      if (!mfaRequired) {
+      if (assurance.currentLevel === "aal2") {
         dispatch({ type: "AUTHENTICATED", user });
         return;
+      }
+      if (assurance.nextLevel !== "aal2") {
+        throw new Error(invalidMfaConfigurationMessage);
       }
 
       const factorResult = await gateway.listFactors();

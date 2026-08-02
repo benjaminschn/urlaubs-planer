@@ -43,6 +43,16 @@ describe("Auth-Controller", () => {
     expect(controller.getState()).toEqual({ status: "signed_out" });
   });
 
+  it("gibt eine AAL1-Sitzung ohne eingerichteten zweiten Faktor nicht frei", async () => {
+    const fake = createFakeGateway({ mfaConfigured: false });
+    const controller = createAuthController(fake.gateway);
+
+    await controller.signIn("person@example.test", "password");
+
+    expect(controller.getState()).toMatchObject({ status: "signed_out" });
+    expect(fake.calls.challenge).toBe(0);
+  });
+
   it("sperrt die geschützte Sitzung bei Ablauf sofort", async () => {
     const fake = createFakeGateway();
     const controller = createAuthController(fake.gateway);

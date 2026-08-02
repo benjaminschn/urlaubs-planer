@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -21,6 +21,18 @@ jobs:
           cache: npm
       - name: Abhängigkeiten installieren
         run: npm ci
+      - name: Supabase CLI einrichten
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Lokale Supabase-Testumgebung starten
+        run: supabase start
+      - name: Migrationen, RLS und Datenbankfunktionen prüfen
+        run: supabase test db --local supabase/tests
+      - name: Datenbankschema linten
+        run: supabase db lint --local --schema public,private --level warning --fail-on warning
+      - name: Datenbank-Advisors ausführen
+        run: supabase db advisors --local --type all --level warn --fail-on warn
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
@@ -44,9 +56,33 @@ jobs:
       - name: Browser-E2E
         run: npm run test:e2e
 
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  deploy-supabase:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: supabase-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: ${{ secrets.PRODUCTION_PROJECT_ID }}
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+      - name: Supabase CLI einrichten
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+      - name: Produktionsprojekt verknüpfen
+        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Migrationen vor dem Frontend ausrollen
+        run: supabase db push --linked --yes
+
+  deploy:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    needs: [verify, deploy-supabase]
     runs-on: ubuntu-latest
     permissions:
       contents: read

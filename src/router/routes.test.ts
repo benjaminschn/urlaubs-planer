@@ -4,7 +4,8 @@ import {
   hashForPath,
   normalizePath,
   routeFromHash,
-  safeRedirectTarget
+  safeRedirectTarget,
+  travelItemRouteFromPath
 } from "./routes";
 
 describe("Hash-Routing und Redirect-Merker", () => {
@@ -27,5 +28,16 @@ describe("Hash-Routing und Redirect-Merker", () => {
   it("normalisiert Hash-Pfade ohne Query- oder Slash-Varianten", () => {
     expect(normalizePath("#/timeline/?from=deep-link")).toBe("/timeline");
     expect(currentPathFromLocation({ hash: "" })).toBe("/app");
+  });
+
+  it("erlaubt nur interne TravelItem-Detail- und Bearbeitungspfade", () => {
+    expect(travelItemRouteFromPath("/events/11111111-1111-4111-8111-111111111111")).toEqual({
+      kind: "detail",
+      path: "/events/11111111-1111-4111-8111-111111111111",
+      itemId: "11111111-1111-4111-8111-111111111111"
+    });
+    expect(travelItemRouteFromPath("/events/new")).toEqual({ kind: "create", path: "/events/new" });
+    expect(routeFromHash("#/events/foreign/edit")).toMatchObject({ kind: "protected", known: true });
+    expect(safeRedirectTarget("javascript:alert(1)")).toBe("/app");
   });
 });

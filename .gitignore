@@ -5,5 +5,7 @@ test-results/
 .env
 .env.*
 !.env.example
+supabase/.branches/
+supabase/.temp/
 .DS_Store
 *.log

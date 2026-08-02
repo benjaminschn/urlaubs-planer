@@ -1,6 +1,6 @@
 begin;
 
-select plan(22);
+select plan(24);
 
 select has_table('public', 'users', 'User-Tabelle ist vorhanden');
 select has_table('public', 'trips', 'Trip-Tabelle ist vorhanden');
@@ -69,6 +69,8 @@ select trip_id, user_a, user_a from test_ids
 union all
 select trip_id, user_b, user_a from test_ids;
 
+grant select on table test_ids to authenticated;
+
 select is(
   (select count(*)::int from public.trip_members where trip_id = (select trip_id from test_ids) and membership_status = 'active'),
   2,
@@ -81,6 +83,7 @@ select throws_ok(
     select 'Ungültig', date '2026-09-02', date '2026-09-01', 'closed', user_a, user_a from test_ids
   $$,
   '23514',
+  'new row for relation "trips" violates check constraint "trips_date_order"',
   'end_date < start_date wird serverseitig abgelehnt'
 );
 
@@ -88,6 +91,25 @@ set local role authenticated;
 select set_config(
   'request.jwt.claims',
   json_build_object('sub', (select user_a::text from test_ids), 'role', 'authenticated')::text,
+  true
+);
+
+select is(
+  (select count(*)::int from public.trips where id = (select trip_id from test_ids)),
+  0,
+  'Eine AAL1-Sitzung erhält vor Abschluss der MFA keine Reisezeile'
+);
+select is(
+  (select count(*)::int from public.update_trip(
+    (select trip_id from test_ids), 1, 'AAL1', date '2026-09-01', date '2026-09-07'
+  )),
+  0,
+  'Eine AAL1-Sitzung kann die privilegierte Reise-RPC nicht verwenden'
+);
+
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', (select user_a::text from test_ids), 'role', 'authenticated', 'aal', 'aal2')::text,
   true
 );
 
@@ -123,7 +145,7 @@ select is(
 
 select set_config(
   'request.jwt.claims',
-  json_build_object('sub', (select user_b::text from test_ids), 'role', 'authenticated')::text,
+  json_build_object('sub', (select user_b::text from test_ids), 'role', 'authenticated', 'aal', 'aal2')::text,
   true
 );
 
@@ -162,7 +184,7 @@ select is(
 
 select set_config(
   'request.jwt.claims',
-  json_build_object('sub', (select outsider::text from test_ids), 'role', 'authenticated')::text,
+  json_build_object('sub', (select outsider::text from test_ids), 'role', 'authenticated', 'aal', 'aal2')::text,
   true
 );
 
@@ -182,6 +204,7 @@ select throws_ok(
     select trip_id, outsider from test_ids
   $$,
   '42501',
+  'permission denied for table trip_members',
   'Ein Nichtmitglied kann keine Mitgliedschaft anlegen'
 );
 select throws_ok(
@@ -189,20 +212,22 @@ select throws_ok(
     update public.users set display_name = 'Fremd' where id = (select user_a from test_ids)
   $$,
   '42501',
+  'permission denied for table users',
   'Ein Nichtmitglied kann kein fremdes Profil ändern'
 );
 
 set local role anon;
 select set_config('request.jwt.claims', '{}', true);
-select is(
-  (select count(*)::int from public.trips),
-  0,
+select throws_ok(
+  $$select 1 from public.trips$$,
+  '42501',
+  'permission denied for table trips',
   'anon erhält keine Reisezeilen'
 );
 select throws_ok(
   $$
     select * from public.update_trip(
-      (select trip_id from test_ids),
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd'::uuid,
       3,
       'anon',
       date '2026-09-01',
@@ -210,6 +235,7 @@ select throws_ok(
     )
   $$,
   '42501',
+  'permission denied for function update_trip',
   'anon kann die kontrollierte Reise-Mutation nicht aufrufen'
 );
 

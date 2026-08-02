@@ -744,15 +744,15 @@ Vor dem physischen Schema beziehungsweise der jeweiligen Funktion sind noch zu e
 3. **Dokument ohne Ereignis:** Wo hochgeladene Dokumente mit fehlgeschlagener Extraktion oder verworfenem Kandidaten in der UI erreichbar bleiben.
 4. **Kandidatenaktualisierung:** Nach welcher UX-Regel ein Candidate ein bestehendes TravelItem aktualisieren darf und wie das Zielereignis eindeutig gewählt wird. Automatische Zuordnung ist ausgeschlossen.
 5. **Teilstrecken-Gruppierung:** Fachliche Regel für mehrere Ereignisse versus Segmente; Hin- und Rückreise bleiben grundsätzlich getrennte TravelItems.
-6. **Gemischte Zeitpräzision:** Verbindliche Validierungs- und Sortierregel, wenn Beginn und Ende unterschiedliche Präzision besitzen.
-7. **Zeitzonen-Eingabe:** Auswahl, Vorschlag und Bestätigung der IANA-Zone bei manueller Erfassung sowie Behandlung historischer/mehrdeutiger Zonen.
+6. **Gemischte Zeitpräzision:** Für manuelle TravelItems gilt in Schnitt 3: Ein sicher früheres lokales Datum wird abgelehnt; bei zwei exakten Werten entscheidet der UTC-Instant. Bei gemischter Präzision werden nur sicher ableitbare Widersprüche abgelehnt.
+7. **Zeitzonen-Eingabe:** Schnitt 3 verlangt bei exakten manuellen Zeiten eine ausdrücklich eingegebene IANA-Zone. Die Gerätezeitzone wird nie automatisch übernommen; mehrdeutige und nicht existente DST-Ortszeiten werden bis zur Korrektur blockiert.
 8. **Location-Deduplizierung:** Ob Nutzer Orte später bewusst zusammenführen können; im MVP ist keine automatische Deduplizierung erforderlich.
-9. **Physische Detailrepräsentation:** Separate Subtyp-Tabellen, stark validierte strukturierte Spalten oder ein Hybrid. Die fachliche disjunkte Variante bleibt unabhängig davon verbindlich.
-10. **Wiederholbare Wertgruppen:** Physische Form für Referenzen, Reisende, Kontakte, Preise, Bedingungen und Zusatzattribute einschließlich Suchanforderungen.
+9. **Physische Detailrepräsentation:** Für Schnitt 3 ist ein Hybrid festgelegt: TravelItem-Basis, LocalTimeValue-Sortierspalten, Locations, typisierte Detailtabellen und Verkehrssegmente sind relational; gemeinsame beziehungsweise typspezifische optionale Wertgruppen liegen in objektförmigen JSONB-Hüllen mit serverseitiger Schema-, Zeit- und Geheimnisvalidierung.
+10. **Wiederholbare Wertgruppen:** Für Schnitt 3 werden Referenzen, Reisende, Kontakte, Preise, Bedingungen und Zusatzattribute in `travel_items.common_details` beziehungsweise der passenden Detail-/Segment-JSONB-Spalte gespeichert. Eine spätere Suchoptimierung darf daraus additive abhängige Tabellen machen.
 11. **ID-Variante:** UUIDv7 gegenüber unmittelbar verfügbarer UUID-Generierung; IDs müssen jedenfalls undurchsichtig und client-/storage-tauglich sein.
 12. **Revisionsaufbewahrung:** Dauer, Umfang und Datenschutzkonzept der technischen TravelItem-Historie, da ein sichtbarer Änderungsverlauf kein MVP-Ziel ist.
 13. **Invitation-Aktivierung:** Das Zukunftsmodell bleibt bis zu einer neuen Produktentscheidung technisch und fachlich deaktiviert.
 14. **Trip-Lebenszyklus:** Ob `closed` tatsächlich eingeführt wird; mehrere Reisen und Archive gehören nicht zum MVP.
-15. **Mengenlimits bei Tombstones:** Ob die Grenze von 30 TravelItems/50 Dokumenten nur aktive Datensätze oder auch gelöschte Tombstones zählt; fachlich sinnvoll ist die Begrenzung der nutzbaren, nicht gelöschten Einträge plus ein separates Schutzlimit für Historie.
+15. **Mengenlimits bei Tombstones:** Die Grenze von 30 TravelItems zählt in Schnitt 3 nur aktive, nicht gelöschte Ereignisse. Gelöschte TravelItems bleiben als fachlicher Tombstone und Revision erhalten und unterliegen der getrennten Aufbewahrungsentscheidung.
 
 Diese offenen Punkte verhindern nicht die fachliche Trennung von Original, Extraktionslauf, Kandidat und bestätigtem Ereignis. Sie müssen jedoch vor der jeweils betroffenen Implementierung verbindlich entschieden und durch Invarianten sowie Berechtigungstests abgesichert werden.

@@ -6,6 +6,9 @@ enabled = true
 [realtime]
 enabled = true
 
+[functions.start-document-extraction]
+verify_jwt = true
+
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:4173"

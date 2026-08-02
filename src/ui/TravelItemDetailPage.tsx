@@ -1,0 +1,160 @@
+import { useState } from "react";
+import { useRouter } from "../router/HashRouter";
+import { useTravelItems } from "../travel/context";
+import { createIdempotencyKey, eventTypeLabels, formatLocalDate, formatTimeRange } from "../travel/format";
+import { travelItemRouteFromPath } from "../router/routes";
+import type { Location, TravelItem } from "../travel/types";
+
+function displayKey(key: string): string {
+  return key
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function RenderValue({ value }: { value: unknown }) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return <span>{String(value)}</span>;
+  if (Array.isArray(value)) {
+    return (
+      <ul className="detail-list">
+        {value.map((entry, index) => <li key={index}><RenderValue value={entry} /></li>)}
+      </ul>
+    );
+  }
+  if (typeof value === "object") {
+    return (
+      <dl className="detail-list">
+        {Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+          if (entry === null || entry === undefined || entry === "") return null;
+          return <div key={key}><dt>{displayKey(key)}</dt><dd><RenderValue value={entry} /></dd></div>;
+        })}
+      </dl>
+    );
+  }
+  return null;
+}
+
+function LocationBlock({ label, location }: { label: string; location: Location | null }) {
+  if (!location) return null;
+  return (
+    <div className="detail-block">
+      <dt>{label}</dt>
+      <dd>
+        <strong>{location.name}</strong>
+        {location.city || location.countryCode ? <span>{[location.city, location.countryCode].filter(Boolean).join(", ")}</span> : null}
+        {location.fullAddress ? <span>{location.fullAddress}</span> : null}
+        {location.locationCode ? <span>{location.locationCodeType ? `${location.locationCodeType}: ` : ""}{location.locationCode}</span> : null}
+      </dd>
+    </div>
+  );
+}
+
+function TravelItemDetails({ item }: { item: TravelItem }) {
+  const common = item.commonDetails;
+  return (
+    <>
+      <dl className="detail-grid">
+        <div className="detail-block"><dt>Beginn</dt><dd>{formatTimeRange(item.startTime, item.endTime)}</dd></div>
+        <LocationBlock label="Hauptort" location={item.locations.main} />
+        <LocationBlock label="Startort" location={item.locations.start} />
+        <LocationBlock label="Zielort" location={item.locations.end} />
+        {common.providerName ? <div className="detail-block"><dt>Anbieter</dt><dd>{common.providerName}</dd></div> : null}
+        {common.bookingPlatformName ? <div className="detail-block"><dt>Buchungsplattform</dt><dd>{common.bookingPlatformName}</dd></div> : null}
+        {common.bookingDate ? <div className="detail-block"><dt>Buchungsdatum</dt><dd>{formatLocalDate(common.bookingDate)}</dd></div> : null}
+        {common.managementUrl ? <div className="detail-block"><dt>Verwaltungslink</dt><dd><a href={common.managementUrl} rel="noreferrer">Link öffnen</a></dd></div> : null}
+      </dl>
+      {item.segments.length > 0 ? (
+        <section className="detail-section" aria-labelledby="segments-title">
+          <h2 id="segments-title">Teilstrecken</h2>
+          <ol className="segment-list">
+            {item.segments.map((segment) => (
+              <li key={segment.id} className="segment-read-card">
+                <p className="eyebrow">Teilstrecke {segment.sequenceNumber}</p>
+                <h3>{segment.startLocation.name} → {segment.endLocation.name}</h3>
+                <p>{formatTimeRange(segment.departureTime, segment.arrivalTime)}</p>
+                <RenderValue value={segment.details} />
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+      <section className="detail-section" aria-labelledby="optional-details-title">
+        <h2 id="optional-details-title">Gespeicherte Angaben</h2>
+        <RenderValue value={{ ...common.price, references: common.references, travelers: common.travelers, providerContacts: common.providerContacts, cancellationConditions: common.cancellationConditions, additionalAttributes: common.additionalAttributes, ...item.typeDetails }} />
+      </section>
+      {common.notes ? <section className="detail-section"><h2>Notizen</h2><p className="preserved-text">{common.notes}</p></section> : null}
+    </>
+  );
+}
+
+export function TravelItemDetailPage() {
+  const { route, navigate } = useRouter();
+  const itemRoute = travelItemRouteFromPath(route.path);
+  const { state, remove, isSaving, getItem } = useTravelItems();
+  const [showDelete, setShowDelete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const item = itemRoute?.kind === "detail" ? getItem(itemRoute.itemId) : null;
+
+  if (state.status === "loading") return <section className="state-card"><p>Ereignis wird geladen …</p></section>;
+  if (!itemRoute || itemRoute.kind !== "detail" || !item) {
+    return (
+      <section className="state-card" role="alert">
+        <h1>Ereignis nicht gefunden</h1>
+        <p>Das Ereignis ist nicht vorhanden oder nicht mehr zugänglich.</p>
+        <button className="primary-button state-action" type="button" onClick={() => navigate("/app")}>Zur Timeline</button>
+      </section>
+    );
+  }
+  const selectedItem = item;
+
+  async function handleDelete() {
+    const result = await remove(selectedItem.id, selectedItem.version, createIdempotencyKey());
+    if (result.kind === "deleted") {
+      navigate("/app", { replace: true });
+      return;
+    }
+    if (result.kind === "conflict") {
+      setError("Das Ereignis wurde zwischenzeitlich geändert. Bitte laden Sie den neuen Stand und versuchen Sie es erneut.");
+    } else if (result.kind === "validation" || result.kind === "limit" || result.kind === "forbidden") {
+      setError(result.message);
+    } else if (result.kind === "unavailable") {
+      setError(result.message);
+    } else {
+      setError("Das Ereignis konnte nicht gelöscht werden.");
+    }
+    setShowDelete(false);
+  }
+
+  return (
+    <section className="detail-page" aria-labelledby="travel-item-detail-title">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">{eventTypeLabels[selectedItem.eventTypeCode]}</p>
+          <h1 id="travel-item-detail-title">{selectedItem.title}</h1>
+          <p className="detail-status">{selectedItem.bookingStatus === "cancelled" ? "Storniert" : selectedItem.bookingStatus === "confirmed" ? "Bestätigt" : "Buchungsstatus unbekannt"}</p>
+        </div>
+        <button className="link-button" type="button" onClick={() => navigate("/app")}>Zurück zur Timeline</button>
+      </div>
+      {error ? <div className="error-summary" role="alert"><p>{error}</p></div> : null}
+      <TravelItemDetails item={selectedItem} />
+      <div className="detail-actions">
+        <button className="secondary-button" type="button" onClick={() => navigate(`/events/${selectedItem.id}/edit`)}>Bearbeiten</button>
+        <button className="danger-button" type="button" onClick={() => setShowDelete(true)}>Ereignis löschen</button>
+      </div>
+      {showDelete ? (
+        <div className="dialog-backdrop" role="presentation">
+          <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+            <h2 id="delete-dialog-title">Ereignis löschen?</h2>
+            <p>Das Ereignis wird aus der normalen Timeline entfernt. Zugehörige Originaldokumente bleiben unabhängig davon erhalten.</p>
+            <div className="detail-actions">
+              <button className="secondary-button" type="button" onClick={() => setShowDelete(false)} disabled={isSaving}>Abbrechen</button>
+              <button className="danger-button" type="button" onClick={() => void handleDelete()} disabled={isSaving} aria-busy={isSaving}>
+                {isSaving ? "Ereignis wird gelöscht …" : "Endgültig löschen"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </section>
+  );
+}

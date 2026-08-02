@@ -9,6 +9,7 @@ import type {
 export type FakeGatewayOptions = {
   signInError?: unknown;
   signInDelay?: number;
+  mfaConfigured?: boolean;
 };
 
 export function createFakeGateway(options: FakeGatewayOptions = {}) {
@@ -61,12 +62,12 @@ export function createFakeGateway(options: FakeGatewayOptions = {}) {
     async getMfaAssurance() {
       return {
         currentLevel: session?.assurance ?? null,
-        nextLevel: session ? "aal2" : null,
+        nextLevel: session ? (options.mfaConfigured === false ? "aal1" : "aal2") : null,
         error: null
       };
     },
     async listFactors() {
-      const factors: AuthFactor[] = session
+      const factors: AuthFactor[] = session && options.mfaConfigured !== false
         ? [{ id: "totp-factor", type: "totp", status: "verified" }]
         : [];
       return { factors, error: null };

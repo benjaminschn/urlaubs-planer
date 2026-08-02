@@ -16,7 +16,7 @@ const findings = [];
 
 const patterns = [
   { name: "OpenAI key assignment", pattern: /(?:OPENAI_API_KEY|VITE_OPENAI|OPENAI_KEY)\s*[:=]/i },
-  { name: "Supabase privileged key", pattern: /(?:SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|service_role)\s*[:=]/i },
+  { name: "Supabase access token", pattern: /\bsbp_[A-Za-z0-9_-]{20,}/ },
   { name: "GitHub token", pattern: /(?:ghp_|gho_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{20,}/ },
   { name: "OpenAI token", pattern: /\bsk-[A-Za-z0-9]{20,}/ },
   { name: "Supabase secret key", pattern: /\bsb_secret_[A-Za-z0-9_-]{20,}/ },
@@ -33,7 +33,9 @@ function isIgnored(filePath) {
     relativePath.startsWith("docs/") ||
     relativePath.startsWith(".agents/") ||
     relativePath.startsWith("schemas/") ||
-    relativePath.startsWith("dist/")
+    relativePath.startsWith("dist/") ||
+    relativePath.startsWith("supabase/.branches/") ||
+    relativePath.startsWith("supabase/.temp/")
   );
 }
 

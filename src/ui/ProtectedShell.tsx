@@ -5,6 +5,10 @@ import { useTrip } from "../trip/context";
 import { formatTripDateRange } from "../trip/format";
 import { TripEditPage } from "./TripEditPage";
 import { TripOverviewPage } from "./TripOverviewPage";
+import { TravelItemDetailPage } from "./TravelItemDetailPage";
+import { TravelItemFormPage } from "./TravelItemFormPage";
+import { travelItemRouteFromPath } from "../router/routes";
+import { DocumentsPage } from "./DocumentsPage";
 
 export function ProtectedShell() {
   const { signOut } = useAuth();
@@ -26,6 +30,7 @@ export function ProtectedShell() {
   }
 
   const isHome = route.path === "/app" || route.path === "/timeline";
+  const travelItemRoute = travelItemRouteFromPath(route.path);
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
@@ -48,7 +53,7 @@ export function ProtectedShell() {
           onClick={() => navigate("/app")}
           aria-current={isHome ? "page" : undefined}
         >
-          Übersicht
+          Timeline
         </button>
         <button
           className={route.path === "/documents" ? "nav-link active" : "nav-link"}
@@ -67,13 +72,9 @@ export function ProtectedShell() {
       <main id="main-content" className="protected-main" tabIndex={-1}>
         {route.path === "/trip" ? <TripEditPage /> : null}
         {route.path === "/app" || route.path === "/timeline" ? <TripOverviewPage /> : null}
-        {route.path === "/documents" ? (
-          <section className="state-card protected-card" aria-labelledby="documents-title">
-            <p className="eyebrow">Dokumente</p>
-            <h1 id="documents-title">Dokumente folgen in einer späteren Ausbaustufe.</h1>
-            <p className="muted">Der gemeinsame Reisekopf ist bereits für beide Personen verfügbar.</p>
-          </section>
-        ) : null}
+        {travelItemRoute?.kind === "create" || travelItemRoute?.kind === "edit" ? <TravelItemFormPage /> : null}
+        {travelItemRoute?.kind === "detail" ? <TravelItemDetailPage /> : null}
+        {route.path === "/documents" ? <DocumentsPage /> : null}
       </main>
     </div>
   );

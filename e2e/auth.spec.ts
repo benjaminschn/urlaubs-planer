@@ -133,3 +133,50 @@ test.describe("Schnitt 2 gemeinsame Reise", () => {
     await secondPage.close();
   });
 });
+
+test.describe("Schnitt 3 manuelle Reiseereignisse", () => {
+  test("legt ein Ereignis an, bearbeitet es und löscht es fachlich", async ({ page }) => {
+    await page.goto("/#/app");
+    await signIn(page);
+
+    await page.getByRole("button", { name: "Ereignis manuell anlegen" }).click();
+    await expect(page.getByRole("heading", { name: "Ereignis anlegen" })).toBeVisible();
+    await page.getByLabel("Ereignisart").selectOption("activity");
+    await page.locator("#travel-item-title").fill("Stadtmuseum");
+    await page.locator("#travel-item-start-date").fill("2026-09-03");
+    await page.getByRole("button", { name: "Ereignis speichern" }).click();
+
+    await expect(page).toHaveURL(/#\/events\/[A-Za-z0-9-]+$/);
+    await expect(page.getByRole("heading", { name: "Stadtmuseum" })).toBeVisible();
+    await expect(page.getByText("03.09.2026", { exact: false })).toBeVisible();
+
+    await page.getByRole("button", { name: "Bearbeiten" }).click();
+    await page.locator("#travel-item-title").fill("Stadtmuseum geändert");
+    await page.getByRole("button", { name: "Änderungen speichern" }).click();
+    await expect(page.getByRole("heading", { name: "Stadtmuseum geändert" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Ereignis löschen" }).click();
+    await expect(page.getByRole("dialog", { name: "Ereignis löschen?" })).toBeVisible();
+    await page.getByRole("button", { name: "Endgültig löschen" }).click();
+    await expect(page.getByRole("heading", { name: "Noch keine Ereignisse" })).toBeVisible();
+  });
+});
+
+test.describe("Schnitt 4 private Originaldokumente", () => {
+  test("lädt ein geprüftes Original hoch und stellt nur einen lokalen Abruf bereit", async ({ page }) => {
+    await page.goto("/#/documents");
+    await signIn(page);
+
+    await page.getByLabel("Dateien auswählen").setInputFiles({
+      name: "reise.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.7\npassive\n%%EOF")
+    });
+
+    await expect(page.getByRole("heading", { name: "Originaldokumente" })).toBeVisible();
+    await expect(page.getByText("reise.pdf", { exact: true }).first()).toBeVisible();
+    await page.getByRole("button", { name: "Original öffnen" }).click();
+    await expect(page.getByRole("link", { name: "Original herunterladen" })).toHaveAttribute("download", "reise.pdf");
+    expect(await page.getByRole("link", { name: "Original herunterladen" }).getAttribute("href")).toMatch(/^blob:/);
+  });
+});

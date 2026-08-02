@@ -11,6 +11,10 @@ import { TripProvider, useTrip } from "../trip/context";
 import type { TripGateway } from "../trip/types";
 import { TripUnavailablePage } from "../ui/TripUnavailablePage";
 import { createRuntimeServices } from "@runtime-services";
+import { TravelItemProvider } from "../travel/context";
+import type { TravelItemGateway } from "../travel/types";
+import { DocumentProvider } from "../documents/context";
+import type { DocumentGateway } from "../documents/types";
 
 function RoutedApp() {
   const { state, signOut } = useAuth();
@@ -70,20 +74,34 @@ function ProtectedRedirect() {
 
 export function App({
   gateway,
-  tripGateway
-}: { gateway?: AuthGateway | null; tripGateway?: TripGateway | null } = {}) {
+  tripGateway,
+  travelItemGateway,
+  documentGateway
+}: {
+  gateway?: AuthGateway | null;
+  tripGateway?: TripGateway | null;
+  travelItemGateway?: TravelItemGateway | null;
+  documentGateway?: DocumentGateway | null;
+} = {}) {
   const runtimeServices = useMemo(
-    () => (gateway === undefined && tripGateway === undefined ? createRuntimeServices() : null),
-    [gateway, tripGateway]
+    () => (gateway === undefined && tripGateway === undefined && travelItemGateway === undefined && documentGateway === undefined ? createRuntimeServices() : null),
+    [documentGateway, gateway, travelItemGateway, tripGateway]
   );
   const resolvedAuthGateway = gateway === undefined ? runtimeServices?.authGateway ?? null : gateway;
   const resolvedTripGateway = tripGateway === undefined ? runtimeServices?.tripGateway ?? null : tripGateway;
+  const resolvedTravelItemGateway =
+    travelItemGateway === undefined ? runtimeServices?.travelItemGateway ?? null : travelItemGateway;
+  const resolvedDocumentGateway = documentGateway === undefined ? runtimeServices?.documentGateway ?? null : documentGateway;
   return (
     <AuthProvider gateway={resolvedAuthGateway}>
       <TripProvider gateway={resolvedTripGateway}>
-        <HashRouter>
-          <RoutedApp />
-        </HashRouter>
+        <TravelItemProvider gateway={resolvedTravelItemGateway}>
+          <DocumentProvider gateway={resolvedDocumentGateway}>
+            <HashRouter>
+              <RoutedApp />
+            </HashRouter>
+          </DocumentProvider>
+        </TravelItemProvider>
       </TripProvider>
     </AuthProvider>
   );
