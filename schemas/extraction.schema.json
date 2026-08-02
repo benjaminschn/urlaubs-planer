@@ -1,0 +1,1127 @@
+{
+  "title": "Travel document LLM extraction output",
+  "description": "Strict, versioned contract for the LLM response only. This is not a database or TravelItem schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "result",
+    "document_summary",
+    "events",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0.0"]
+    },
+    "result": {
+      "type": "string",
+      "enum": ["completed", "partial", "no_relevant_events"]
+    },
+    "document_summary": {
+      "$ref": "#/$defs/text_field"
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    }
+  },
+  "$defs": {
+    "provenance": {
+      "type": "string",
+      "enum": ["explicit", "inferred", "unknown"]
+    },
+    "confidence": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_number", "source_hint"],
+      "properties": {
+        "page_number": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "source_hint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        }
+      }
+    },
+    "evidence_list": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "text_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "integer_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "boolean_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["boolean", "null"]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "string_list_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["array", "null"],
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "event_type_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "enum": ["accommodation", "flight", "train", "generic", null]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "booking_status_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "enum": ["confirmed", "cancelled", "unknown", null]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "time_precision_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "enum": ["exact_time", "date_only", "unknown_time", null]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "time_resolution_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "enum": ["resolved", "date_only", "ambiguous", "nonexistent", "unresolved", null]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "local_time_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_date",
+        "local_time",
+        "precision",
+        "iana_time_zone",
+        "utc_offset",
+        "instant_utc",
+        "resolution_status"
+      ],
+      "properties": {
+        "local_date": {
+          "$ref": "#/$defs/text_field"
+        },
+        "local_time": {
+          "$ref": "#/$defs/text_field"
+        },
+        "precision": {
+          "$ref": "#/$defs/time_precision_field"
+        },
+        "iana_time_zone": {
+          "$ref": "#/$defs/text_field"
+        },
+        "utc_offset": {
+          "$ref": "#/$defs/text_field"
+        },
+        "instant_utc": {
+          "$ref": "#/$defs/text_field"
+        },
+        "resolution_status": {
+          "$ref": "#/$defs/time_resolution_field"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "full_address",
+        "city",
+        "region",
+        "country_code",
+        "postal_code",
+        "location_code_type",
+        "location_code"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/text_field"
+        },
+        "full_address": {
+          "$ref": "#/$defs/text_field"
+        },
+        "city": {
+          "$ref": "#/$defs/text_field"
+        },
+        "region": {
+          "$ref": "#/$defs/text_field"
+        },
+        "country_code": {
+          "$ref": "#/$defs/text_field"
+        },
+        "postal_code": {
+          "$ref": "#/$defs/text_field"
+        },
+        "location_code_type": {
+          "$ref": "#/$defs/text_field"
+        },
+        "location_code": {
+          "$ref": "#/$defs/text_field"
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["booking", "reservation", "order", "pnr", "ticket", "voucher", "other"]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "references_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["array", "null"],
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "phone", "email", "website", "provenance", "confidence", "evidence"],
+      "properties": {
+        "role": {
+          "type": ["string", "null"],
+          "maxLength": 100
+        },
+        "phone": {
+          "type": ["string", "null"],
+          "maxLength": 100
+        },
+        "email": {
+          "type": ["string", "null"],
+          "maxLength": 320
+        },
+        "website": {
+          "type": ["string", "null"],
+          "maxLength": 2000
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "contacts_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["array", "null"],
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/contact"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "amount_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "maxLength": 64
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "payment_status_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"],
+          "enum": ["paid", "partially_paid", "unpaid", "pay_at_property", "unknown", null]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "pricing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "total_amount",
+        "paid_amount",
+        "outstanding_amount",
+        "taxes_and_fees_amount",
+        "payment_status",
+        "payment_method_masked"
+      ],
+      "properties": {
+        "currency": {
+          "$ref": "#/$defs/text_field"
+        },
+        "total_amount": {
+          "$ref": "#/$defs/amount_field"
+        },
+        "paid_amount": {
+          "$ref": "#/$defs/amount_field"
+        },
+        "outstanding_amount": {
+          "$ref": "#/$defs/amount_field"
+        },
+        "taxes_and_fees_amount": {
+          "$ref": "#/$defs/amount_field"
+        },
+        "payment_status": {
+          "$ref": "#/$defs/payment_status_field"
+        },
+        "payment_method_masked": {
+          "$ref": "#/$defs/text_field"
+        }
+      }
+    },
+    "attribute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "value", "unit", "provenance", "confidence", "evidence"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "unit": {
+          "type": ["string", "null"],
+          "maxLength": 50
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "attributes_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "provenance", "confidence", "evidence"],
+      "properties": {
+        "value": {
+          "type": ["array", "null"],
+          "maxItems": 30,
+          "items": {
+            "$ref": "#/$defs/attribute"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    },
+    "accommodation_details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accommodation_name",
+        "accommodation_type",
+        "check_in",
+        "check_out",
+        "night_count",
+        "room_count",
+        "guest_count",
+        "room_description",
+        "meal_plan",
+        "included_services",
+        "check_in_instructions",
+        "access_code",
+        "special_requests"
+      ],
+      "properties": {
+        "accommodation_name": {
+          "$ref": "#/$defs/text_field"
+        },
+        "accommodation_type": {
+          "$ref": "#/$defs/text_field"
+        },
+        "check_in": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "check_out": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "night_count": {
+          "$ref": "#/$defs/integer_field"
+        },
+        "room_count": {
+          "$ref": "#/$defs/integer_field"
+        },
+        "guest_count": {
+          "$ref": "#/$defs/integer_field"
+        },
+        "room_description": {
+          "$ref": "#/$defs/text_field"
+        },
+        "meal_plan": {
+          "$ref": "#/$defs/text_field"
+        },
+        "included_services": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "check_in_instructions": {
+          "$ref": "#/$defs/text_field"
+        },
+        "access_code": {
+          "$ref": "#/$defs/text_field"
+        },
+        "special_requests": {
+          "$ref": "#/$defs/string_list_field"
+        }
+      }
+    },
+    "flight_segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "marketing_carrier",
+        "operating_carrier",
+        "flight_number",
+        "booking_code",
+        "ticket_numbers",
+        "departure_location",
+        "arrival_location",
+        "departure",
+        "arrival",
+        "departure_terminal",
+        "departure_gate",
+        "arrival_terminal",
+        "arrival_gate",
+        "flight_status",
+        "passengers",
+        "seats",
+        "cabin_class",
+        "booking_class",
+        "fare_class",
+        "checked_baggage",
+        "cabin_baggage",
+        "services",
+        "check_in_window",
+        "check_in_url",
+        "duration_minutes",
+        "layover_after_minutes"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "marketing_carrier": {
+          "$ref": "#/$defs/text_field"
+        },
+        "operating_carrier": {
+          "$ref": "#/$defs/text_field"
+        },
+        "flight_number": {
+          "$ref": "#/$defs/text_field"
+        },
+        "booking_code": {
+          "$ref": "#/$defs/text_field"
+        },
+        "ticket_numbers": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "departure_location": {
+          "$ref": "#/$defs/location"
+        },
+        "arrival_location": {
+          "$ref": "#/$defs/location"
+        },
+        "departure": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "arrival": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "departure_terminal": {
+          "$ref": "#/$defs/text_field"
+        },
+        "departure_gate": {
+          "$ref": "#/$defs/text_field"
+        },
+        "arrival_terminal": {
+          "$ref": "#/$defs/text_field"
+        },
+        "arrival_gate": {
+          "$ref": "#/$defs/text_field"
+        },
+        "flight_status": {
+          "$ref": "#/$defs/text_field"
+        },
+        "passengers": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "seats": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "cabin_class": {
+          "$ref": "#/$defs/text_field"
+        },
+        "booking_class": {
+          "$ref": "#/$defs/text_field"
+        },
+        "fare_class": {
+          "$ref": "#/$defs/text_field"
+        },
+        "checked_baggage": {
+          "$ref": "#/$defs/text_field"
+        },
+        "cabin_baggage": {
+          "$ref": "#/$defs/text_field"
+        },
+        "services": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "check_in_window": {
+          "$ref": "#/$defs/text_field"
+        },
+        "check_in_url": {
+          "$ref": "#/$defs/text_field"
+        },
+        "duration_minutes": {
+          "$ref": "#/$defs/integer_field"
+        },
+        "layover_after_minutes": {
+          "$ref": "#/$defs/integer_field"
+        }
+      }
+    },
+    "flight_details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["segments", "fare_conditions", "change_conditions", "cancellation_conditions"],
+      "properties": {
+        "segments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/flight_segment"
+          }
+        },
+        "fare_conditions": {
+          "$ref": "#/$defs/text_field"
+        },
+        "change_conditions": {
+          "$ref": "#/$defs/text_field"
+        },
+        "cancellation_conditions": {
+          "$ref": "#/$defs/text_field"
+        }
+      }
+    },
+    "train_segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "operator",
+        "train_type",
+        "train_number",
+        "line_name",
+        "departure_location",
+        "arrival_location",
+        "departure",
+        "arrival",
+        "departure_platform",
+        "arrival_platform",
+        "travelers",
+        "coach",
+        "seats",
+        "travel_class",
+        "reservation_status",
+        "ticket_numbers",
+        "order_numbers",
+        "reservation_numbers",
+        "ticket_type",
+        "validity",
+        "train_specific_restriction",
+        "fare_name",
+        "discount",
+        "duration_minutes",
+        "layover_after_minutes"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "operator": {
+          "$ref": "#/$defs/text_field"
+        },
+        "train_type": {
+          "$ref": "#/$defs/text_field"
+        },
+        "train_number": {
+          "$ref": "#/$defs/text_field"
+        },
+        "line_name": {
+          "$ref": "#/$defs/text_field"
+        },
+        "departure_location": {
+          "$ref": "#/$defs/location"
+        },
+        "arrival_location": {
+          "$ref": "#/$defs/location"
+        },
+        "departure": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "arrival": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "departure_platform": {
+          "$ref": "#/$defs/text_field"
+        },
+        "arrival_platform": {
+          "$ref": "#/$defs/text_field"
+        },
+        "travelers": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "coach": {
+          "$ref": "#/$defs/text_field"
+        },
+        "seats": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "travel_class": {
+          "$ref": "#/$defs/text_field"
+        },
+        "reservation_status": {
+          "$ref": "#/$defs/text_field"
+        },
+        "ticket_numbers": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "order_numbers": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "reservation_numbers": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "ticket_type": {
+          "$ref": "#/$defs/text_field"
+        },
+        "validity": {
+          "$ref": "#/$defs/text_field"
+        },
+        "train_specific_restriction": {
+          "$ref": "#/$defs/boolean_field"
+        },
+        "fare_name": {
+          "$ref": "#/$defs/text_field"
+        },
+        "discount": {
+          "$ref": "#/$defs/text_field"
+        },
+        "duration_minutes": {
+          "$ref": "#/$defs/integer_field"
+        },
+        "layover_after_minutes": {
+          "$ref": "#/$defs/integer_field"
+        }
+      }
+    },
+    "train_details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["segments", "fare_conditions", "change_conditions", "cancellation_conditions"],
+      "properties": {
+        "segments": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/train_segment"
+          }
+        },
+        "fare_conditions": {
+          "$ref": "#/$defs/text_field"
+        },
+        "change_conditions": {
+          "$ref": "#/$defs/text_field"
+        },
+        "cancellation_conditions": {
+          "$ref": "#/$defs/text_field"
+        }
+      }
+    },
+    "generic_details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "description",
+        "meeting_point",
+        "end_point",
+        "ticket_numbers",
+        "participant_count",
+        "requirements",
+        "included_services",
+        "excluded_services"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/text_field"
+        },
+        "description": {
+          "$ref": "#/$defs/text_field"
+        },
+        "meeting_point": {
+          "$ref": "#/$defs/location"
+        },
+        "end_point": {
+          "$ref": "#/$defs/location"
+        },
+        "ticket_numbers": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "participant_count": {
+          "$ref": "#/$defs/integer_field"
+        },
+        "requirements": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "included_services": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "excluded_services": {
+          "$ref": "#/$defs/string_list_field"
+        }
+      }
+    },
+    "nullable_accommodation_details": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/accommodation_details"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullable_flight_details": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/flight_details"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullable_train_details": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/train_details"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullable_generic_details": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/generic_details"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "typed_details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accommodation", "flight", "train", "generic"],
+      "properties": {
+        "accommodation": {
+          "$ref": "#/$defs/nullable_accommodation_details"
+        },
+        "flight": {
+          "$ref": "#/$defs/nullable_flight_details"
+        },
+        "train": {
+          "$ref": "#/$defs/nullable_train_details"
+        },
+        "generic": {
+          "$ref": "#/$defs/nullable_generic_details"
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_index",
+        "event_type",
+        "title",
+        "booking_status",
+        "start",
+        "end",
+        "main_location",
+        "start_location",
+        "end_location",
+        "provider_name",
+        "booking_platform_name",
+        "booking_references",
+        "travelers",
+        "provider_contacts",
+        "management_url",
+        "pricing",
+        "booking_date",
+        "cancellation_deadline",
+        "cancellation_conditions",
+        "notes",
+        "additional_attributes",
+        "details"
+      ],
+      "properties": {
+        "event_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event_type": {
+          "$ref": "#/$defs/event_type_field"
+        },
+        "title": {
+          "$ref": "#/$defs/text_field"
+        },
+        "booking_status": {
+          "$ref": "#/$defs/booking_status_field"
+        },
+        "start": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "end": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "main_location": {
+          "$ref": "#/$defs/location"
+        },
+        "start_location": {
+          "$ref": "#/$defs/location"
+        },
+        "end_location": {
+          "$ref": "#/$defs/location"
+        },
+        "provider_name": {
+          "$ref": "#/$defs/text_field"
+        },
+        "booking_platform_name": {
+          "$ref": "#/$defs/text_field"
+        },
+        "booking_references": {
+          "$ref": "#/$defs/references_field"
+        },
+        "travelers": {
+          "$ref": "#/$defs/string_list_field"
+        },
+        "provider_contacts": {
+          "$ref": "#/$defs/contacts_field"
+        },
+        "management_url": {
+          "$ref": "#/$defs/text_field"
+        },
+        "pricing": {
+          "$ref": "#/$defs/pricing"
+        },
+        "booking_date": {
+          "$ref": "#/$defs/text_field"
+        },
+        "cancellation_deadline": {
+          "$ref": "#/$defs/local_time_value"
+        },
+        "cancellation_conditions": {
+          "$ref": "#/$defs/text_field"
+        },
+        "notes": {
+          "$ref": "#/$defs/text_field"
+        },
+        "additional_attributes": {
+          "$ref": "#/$defs/attributes_field"
+        },
+        "details": {
+          "$ref": "#/$defs/typed_details"
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "event_index", "field_path", "message", "evidence"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "conflicting_information",
+            "ambiguous_information",
+            "missing_critical_information",
+            "timezone_unresolved",
+            "chronology_unresolved",
+            "unsupported_event_kind",
+            "possible_duplicate",
+            "other"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "review", "blocking"]
+        },
+        "event_index": {
+          "type": ["integer", "null"]
+        },
+        "field_path": {
+          "type": ["string", "null"],
+          "maxLength": 250
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence_list"
+        }
+      }
+    }
+  }
+}

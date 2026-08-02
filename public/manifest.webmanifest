@@ -1,0 +1,19 @@
+{
+  "name": "Gemeinsamer Reiseplaner",
+  "short_name": "Reiseplaner",
+  "description": "Privater gemeinsamer Reiseplaner",
+  "lang": "de",
+  "start_url": "./#/app",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f7f8",
+  "theme_color": "#143642",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
