@@ -129,6 +129,8 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
       try {
         const result = await gateway.uploadDocument({ ...input, tripId: trip.id });
         if (result.kind === "available" || result.kind === "failed") {
+          requestNumber.current += 1;
+          setIsRefreshing(false);
           setState((current) => {
             const document = result.document;
             if (!document) return result.kind === "failed" ? { ...current, message: result.message } : current;

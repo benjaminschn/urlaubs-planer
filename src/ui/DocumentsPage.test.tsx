@@ -1,20 +1,21 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../app/App";
+import type { DocumentGateway } from "../documents/types";
 import { createFakeGateway } from "../test/fake-gateway";
 import { createFakeTripGateway } from "../test/fake-trip-gateway";
 import { clearFakeDocumentStorage, createFakeDocumentGateway } from "../test/fake-document-gateway";
 
 beforeEach(() => clearFakeDocumentStorage());
 
-async function signInAndOpenDocuments() {
+async function signInAndOpenDocuments(providedGateway?: DocumentGateway) {
   window.location.hash = "#/documents";
   const auth = createFakeGateway();
   const trip = createFakeTripGateway();
   const documents = createFakeDocumentGateway();
   const user = userEvent.setup();
-  render(<App gateway={auth.gateway} tripGateway={trip.gateway} documentGateway={documents.gateway} />);
+  render(<App gateway={auth.gateway} tripGateway={trip.gateway} documentGateway={providedGateway ?? documents.gateway} />);
   await user.type(await screen.findByLabelText("E-Mail-Adresse"), "member@example.test");
   await user.type(screen.getByLabelText("Passwort"), "password");
   await user.click(screen.getByRole("button", { name: "Anmelden" }));
@@ -34,9 +35,11 @@ describe("private Dokumente", () => {
     ]);
 
     expect((await screen.findAllByText("reise.pdf")).length).toBeGreaterThanOrEqual(1);
-    expect(await screen.findByText("unsicher.pdf")).toBeInTheDocument();
+    expect((await screen.findAllByText("unsicher.pdf")).length).toBeGreaterThanOrEqual(1);
     expect((await screen.findAllByText(/Verfügbar/)).length).toBeGreaterThanOrEqual(1);
-    expect(await screen.findByText("Dateiendung oder Dateityp stimmen nicht mit dem Dateiinhalt überein.")).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText("Dateiendung oder Dateityp stimmen nicht mit dem Dateiinhalt überein.")).length
+    ).toBeGreaterThanOrEqual(1);
 
     await user.click(screen.getByRole("button", { name: "Original öffnen" }));
     expect(await screen.findByRole("link", { name: "Original herunterladen" })).toHaveAttribute("download", "reise.pdf");
@@ -49,6 +52,39 @@ describe("private Dokumente", () => {
     await user.upload(input, files);
     expect(screen.getByRole("alert")).toHaveTextContent("höchstens fünf Dateien");
     expect(screen.queryByText("0.pdf")).not.toBeInTheDocument();
+  });
+
+  it("lässt einen verspäteten leeren Refresh den erfolgreichen Upload nicht überschreiben", async () => {
+    const documents = createFakeDocumentGateway();
+    let listCall = 0;
+    let resolveStaleRefresh!: (result: Awaited<ReturnType<DocumentGateway["listDocuments"]>>) => void;
+    const staleRefresh = new Promise<Awaited<ReturnType<DocumentGateway["listDocuments"]>>>((resolve) => {
+      resolveStaleRefresh = resolve;
+    });
+    const gateway: DocumentGateway = {
+      ...documents.gateway,
+      listDocuments(tripId) {
+        listCall += 1;
+        return listCall === 2 ? staleRefresh : documents.gateway.listDocuments(tripId);
+      },
+      subscribeToDocuments({ onStatus }) {
+        onStatus("connected");
+        return () => undefined;
+      }
+    };
+    const { user } = await signInAndOpenDocuments(gateway);
+
+    await screen.findByRole("heading", { name: "Noch keine Dokumente" });
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(listCall).toBe(2));
+    await user.upload(
+      screen.getByLabelText("Dateien auswählen"),
+      new File(["%PDF-1.7\npassive\n%%EOF"], "reise.pdf", { type: "application/pdf" })
+    );
+    expect(await screen.findByRole("heading", { name: "Originaldokumente" })).toBeInTheDocument();
+
+    resolveStaleRefresh({ kind: "ready", documents: [] });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Originaldokumente" })).toBeInTheDocument());
   });
 
   it("startet die Verarbeitung ausdrücklich und zeigt nur unbestätigte Vorschläge", async () => {
