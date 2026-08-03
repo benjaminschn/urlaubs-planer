@@ -28,10 +28,10 @@ describe("Extraktionsvertrag", () => {
 
   it("zeigt Herkunftsfelder unverändert und neutral an", () => {
     const candidate: ExtractionCandidate = {
-      id: "candidate", candidateIndex: 0, proposedEventTypeCode: "flight", status: "draft", warnings: [],
+      id: "candidate", candidateIndex: 0, proposedEventTypeCode: "flight", status: "draft", version: 1, canonicalPayload: null, confirmedTravelItemId: null, warnings: [],
       fields: [
-        { fieldPath: "title", occurrenceKey: "", value: "Berlin → Paris", provenance: "explicit", confidence: 0.98, sourceLocator: [{ pageNumber: 1, sourceHint: "Flight" }] },
-        { fieldPath: "start.local_date", occurrenceKey: "", value: "2026-10-04", provenance: "explicit", confidence: 0.98, sourceLocator: [{ pageNumber: 1, sourceHint: "Departure" }] }
+        { fieldPath: "title", occurrenceKey: "", originalValue: "Berlin → Paris", value: "Berlin → Paris", provenance: "explicit", confidence: 0.98, sourceLocator: [{ pageNumber: 1, sourceHint: "Flight" }] },
+        { fieldPath: "start.local_date", occurrenceKey: "", originalValue: "2026-10-04", value: "2026-10-04", provenance: "explicit", confidence: 0.98, sourceLocator: [{ pageNumber: 1, sourceHint: "Departure" }] }
       ]
     };
     expect(candidateTitle(candidate)).toBe("Berlin → Paris");

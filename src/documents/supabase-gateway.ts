@@ -10,6 +10,7 @@ import type {
   DocumentRealtimeStatus,
   DocumentUploadInput,
   DocumentUploadResult,
+  CandidateMutationResult,
   ExtractionCandidate,
   ExtractionField,
   ExtractionLoadResult,
@@ -41,9 +42,11 @@ type RecordLike = Record<string, unknown>;
 const extractionRunColumns = [
   "id", "document_id", "status", "error_code", "provider_attempt_count", "created_at", "updated_at", "completed_at"
 ].join(",");
-const extractionCandidateColumns = ["id", "extraction_run_id", "candidate_index", "proposed_event_type_code", "status"].join(",");
+const extractionCandidateColumns = ["id", "extraction_run_id", "candidate_index", "proposed_event_type_code", "status", "version"].join(",");
 const extractionFieldColumns = ["candidate_id", "field_path", "occurrence_key", "original_value", "provenance", "confidence", "source_locator"].join(",");
 const extractionWarningColumns = ["extraction_run_id", "candidate_id", "warning_code", "severity", "field_path", "message"].join(",");
+const candidateCorrectionColumns = ["candidate_id", "field_path", "occurrence_key", "operation", "new_value", "candidate_version_after"].join(",");
+const candidateConfirmationColumns = ["candidate_id", "travel_item_id"].join(",");
 
 function asRecord(value: unknown): RecordLike | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as RecordLike) : null;
@@ -69,6 +72,7 @@ function mapField(value: unknown): ExtractionField | null {
   return {
     fieldPath: row.field_path,
     occurrenceKey: row.occurrence_key,
+    originalValue: row.original_value,
     value: row.original_value,
     provenance: row.provenance,
     confidence: typeof row.confidence === "number" ? row.confidence : null,
@@ -87,9 +91,9 @@ function mapWarning(value: unknown): { runId: string; candidateId: string | null
   };
 }
 
-function mapCandidate(value: unknown, fields: ExtractionField[], warnings: ExtractionWarning[]): ExtractionCandidate | null {
+function mapCandidate(value: unknown, fields: ExtractionField[], warnings: ExtractionWarning[], canonicalPayload: RecordLike | null, confirmedTravelItemId: string | null): ExtractionCandidate | null {
   const row = asRecord(value);
-  if (!row || typeof row.id !== "string" || typeof row.candidate_index !== "number" || typeof row.proposed_event_type_code !== "string") return null;
+  if (!row || typeof row.id !== "string" || typeof row.candidate_index !== "number" || typeof row.proposed_event_type_code !== "string" || typeof row.version !== "number") return null;
   const eventTypes = ["accommodation", "flight", "rail", "bus", "activity"] as const;
   const statuses = ["draft", "confirmed", "discarded", "superseded"] as const;
   if (!eventTypes.includes(row.proposed_event_type_code as (typeof eventTypes)[number]) || !statuses.includes(row.status as (typeof statuses)[number])) return null;
@@ -98,9 +102,31 @@ function mapCandidate(value: unknown, fields: ExtractionField[], warnings: Extra
     candidateIndex: row.candidate_index,
     proposedEventTypeCode: row.proposed_event_type_code as ExtractionCandidate["proposedEventTypeCode"],
     status: row.status as ExtractionCandidate["status"],
+    version: row.version,
+    canonicalPayload,
+    confirmedTravelItemId,
     fields,
     warnings
   };
+}
+
+function mapCandidateMutation(data: unknown, error: { code?: string; message?: string } | null): CandidateMutationResult {
+  const row = firstRow(data);
+  const status = typeof row?.operation_status === "string" ? row.operation_status : null;
+  const candidateId = typeof row?.candidate_id === "string" ? row.candidate_id : null;
+  const version = typeof row?.version === "number" ? row.version : null;
+  const code = typeof row?.error_code === "string" ? row.error_code : undefined;
+  const message = typeof row?.error_message === "string" ? row.error_message : null;
+  if ((status === "updated" || status === "discarded") && candidateId && version !== null) return { kind: status, candidateId, version };
+  if ((status === "created" || status === "replayed") && candidateId && version !== null && typeof row?.travel_item_id === "string") {
+    return { kind: status, candidateId, travelItemId: row.travel_item_id, version };
+  }
+  if (status === "conflict" && candidateId && version !== null) return { kind: "conflict", candidateId, version, message: message ?? "Der Entwurf wurde zwischenzeitlich geändert." };
+  if (status === "validation" || status === "limit" || status === "forbidden" || status === "unavailable") {
+    return { kind: status, code, message: message ?? "Der Entwurf konnte nicht gespeichert werden." };
+  }
+  if (error?.code === "42501") return { kind: "forbidden", message: "Der Entwurf ist nicht verfügbar." };
+  return { kind: "unavailable", message: "Der Speicherstatus konnte nicht bestätigt werden." };
 }
 
 function mapRun(value: unknown, candidates: ExtractionCandidate[], warnings: ExtractionWarning[]): ExtractionRun | null {
@@ -308,16 +334,38 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
       ]);
       if (candidateError || warningError || !Array.isArray(candidateRows) || !Array.isArray(warningRows)) return { kind: "unavailable" };
       const candidateIds = candidateRows.map((candidate) => asRecord(candidate)?.id).filter((id): id is string => typeof id === "string");
-      const { data: fieldRows, error: fieldError } = candidateIds.length > 0
-        ? await client.from("candidate_fields").select(extractionFieldColumns).in("candidate_id", candidateIds)
-        : { data: [], error: null };
-      if (fieldError || !Array.isArray(fieldRows)) return { kind: "unavailable" };
+      const [{ data: fieldRows, error: fieldError }, { data: correctionRows, error: correctionError }, { data: confirmationRows, error: confirmationError }] = candidateIds.length > 0
+        ? await Promise.all([
+            client.from("candidate_fields").select(extractionFieldColumns).in("candidate_id", candidateIds),
+            client.from("candidate_corrections").select(candidateCorrectionColumns).in("candidate_id", candidateIds).order("candidate_version_after", { ascending: true }),
+            client.from("candidate_confirmations").select(candidateConfirmationColumns).in("candidate_id", candidateIds)
+          ])
+        : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+      if (fieldError || correctionError || confirmationError || !Array.isArray(fieldRows) || !Array.isArray(correctionRows) || !Array.isArray(confirmationRows)) return { kind: "unavailable" };
       const fieldsByCandidate = new Map<string, ExtractionField[]>();
       for (const row of fieldRows) {
         const field = mapField(row);
         const candidateId = asRecord(row)?.candidate_id;
         if (!field || typeof candidateId !== "string") continue;
         fieldsByCandidate.set(candidateId, [...(fieldsByCandidate.get(candidateId) ?? []), field]);
+      }
+      const canonicalByCandidate = new Map<string, RecordLike>();
+      for (const raw of correctionRows) {
+        const row = asRecord(raw);
+        if (!row || typeof row.candidate_id !== "string" || typeof row.field_path !== "string" || typeof row.occurrence_key !== "string") continue;
+        if (row.field_path === "$canonical_payload") {
+          const payload = asRecord(row.new_value);
+          if (payload) canonicalByCandidate.set(row.candidate_id, payload);
+          continue;
+        }
+        const fields = fieldsByCandidate.get(row.candidate_id) ?? [];
+        const field = fields.find((candidateField) => candidateField.fieldPath === row.field_path && candidateField.occurrenceKey === row.occurrence_key);
+        if (field) field.value = row.new_value;
+      }
+      const confirmedItemByCandidate = new Map<string, string>();
+      for (const raw of confirmationRows) {
+        const row = asRecord(raw);
+        if (typeof row?.candidate_id === "string" && typeof row.travel_item_id === "string") confirmedItemByCandidate.set(row.candidate_id, row.travel_item_id);
       }
       const warningsByCandidate = new Map<string, ExtractionWarning[]>();
       const warningsByRun = new Map<string, ExtractionWarning[]>();
@@ -329,7 +377,8 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
       }
       const candidatesByRun = new Map<string, ExtractionCandidate[]>();
       for (const row of candidateRows) {
-        const candidate = mapCandidate(row, fieldsByCandidate.get(asRecord(row)?.id as string) ?? [], warningsByCandidate.get(asRecord(row)?.id as string) ?? []);
+        const candidateId = asRecord(row)?.id as string;
+        const candidate = mapCandidate(row, fieldsByCandidate.get(candidateId) ?? [], warningsByCandidate.get(candidateId) ?? [], canonicalByCandidate.get(candidateId) ?? null, confirmedItemByCandidate.get(candidateId) ?? null);
         const runId = asRecord(row)?.extraction_run_id;
         if (!candidate || typeof runId !== "string") continue;
         candidatesByRun.set(runId, [...(candidatesByRun.get(runId) ?? []), candidate]);
@@ -363,6 +412,36 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
         return { kind: "failed", code, message: extractionErrorMessage(code) };
       }
       return { kind: "accepted", run };
+    },
+
+    async saveCandidateReview(input): Promise<CandidateMutationResult> {
+      const { data, error } = await client.rpc("apply_candidate_correction", {
+        p_candidate_id: input.candidateId,
+        p_expected_version: input.expectedVersion,
+        p_field_path: "$canonical_payload",
+        p_occurrence_key: "",
+        p_operation: "set",
+        p_new_value: input.payload
+      });
+      return mapCandidateMutation(data, error);
+    },
+
+    async discardCandidate(input): Promise<CandidateMutationResult> {
+      const { data, error } = await client.rpc("discard_candidate", {
+        p_candidate_id: input.candidateId,
+        p_expected_version: input.expectedVersion
+      });
+      return mapCandidateMutation(data, error);
+    },
+
+    async confirmCandidate(input): Promise<CandidateMutationResult> {
+      const { data, error } = await client.rpc("confirm_candidate", {
+        p_candidate_id: input.candidateId,
+        p_expected_version: input.expectedVersion,
+        p_idempotency_key: input.idempotencyKey,
+        p_payload: input.payload
+      });
+      return mapCandidateMutation(data, error);
     },
 
     async downloadDocument(input: { tripId: string; documentId: string }): Promise<DocumentDownloadResult> {
@@ -401,6 +480,9 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
           )
           .on("postgres_changes", { event: "*", schema: "public", table: "extraction_runs" }, () => onSignal())
           .on("postgres_changes", { event: "*", schema: "public", table: "extraction_candidates" }, () => onSignal())
+          .on("postgres_changes", { event: "*", schema: "public", table: "candidate_corrections" }, () => onSignal())
+          .on("postgres_changes", { event: "*", schema: "public", table: "candidate_confirmations" }, () => onSignal())
+          .on("postgres_changes", { event: "*", schema: "public", table: "travel_item_documents" }, () => onSignal())
           .on("postgres_changes", { event: "*", schema: "public", table: "extraction_run_warnings" }, () => onSignal())
           .subscribe((status: string) => {
             const mappedStatus = mapRealtimeStatus(status);

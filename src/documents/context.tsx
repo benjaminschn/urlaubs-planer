@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../auth/context";
 import { useTrip } from "../trip/context";
 import type {
+  CandidateMutationResult,
   Document,
   DocumentDownloadResult,
   DocumentGateway,
@@ -18,7 +19,8 @@ import type {
   ExtractionRun,
   ExtractionStartResult,
   DocumentUploadInput,
-  DocumentUploadResult
+  DocumentUploadResult,
+  ExtractionCandidate
 } from "./types";
 import { documentErrorMessage } from "./validation";
 
@@ -36,6 +38,10 @@ type DocumentContextValue = {
   upload: (input: Omit<DocumentUploadInput, "tripId">) => Promise<DocumentUploadResult>;
   download: (documentId: string) => Promise<DocumentDownloadResult>;
   startExtraction: (documentId: string) => Promise<ExtractionStartResult>;
+  getCandidate: (candidateId: string) => { candidate: ExtractionCandidate; document: Document } | null;
+  saveCandidateReview: (candidateId: string, expectedVersion: number, payload: Record<string, unknown>) => Promise<CandidateMutationResult>;
+  discardCandidate: (candidateId: string, expectedVersion: number) => Promise<CandidateMutationResult>;
+  confirmCandidate: (candidateId: string, expectedVersion: number, payload: Record<string, unknown>, idempotencyKey: string) => Promise<CandidateMutationResult>;
 };
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
@@ -168,9 +174,39 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
     [gateway, reload, trip]
   );
 
+  const getCandidate = useCallback((candidateId: string) => {
+    for (const run of state.runs) {
+      const candidate = run.candidates.find((item) => item.id === candidateId);
+      const document = candidate ? state.documents.find((item) => item.id === run.documentId) : null;
+      if (candidate && document) return { candidate, document };
+    }
+    return null;
+  }, [state.documents, state.runs]);
+
+  const saveCandidateReview = useCallback(async (candidateId: string, expectedVersion: number, payload: Record<string, unknown>) => {
+    if (!gateway) return { kind: "unavailable", message: "Der Entwurf konnte nicht gespeichert werden." } satisfies CandidateMutationResult;
+    const result = await gateway.saveCandidateReview({ candidateId, expectedVersion, payload });
+    await reload();
+    return result;
+  }, [gateway, reload]);
+
+  const discardCandidate = useCallback(async (candidateId: string, expectedVersion: number) => {
+    if (!gateway) return { kind: "unavailable", message: "Der Entwurf konnte nicht verworfen werden." } satisfies CandidateMutationResult;
+    const result = await gateway.discardCandidate({ candidateId, expectedVersion });
+    await reload();
+    return result;
+  }, [gateway, reload]);
+
+  const confirmCandidate = useCallback(async (candidateId: string, expectedVersion: number, payload: Record<string, unknown>, idempotencyKey: string) => {
+    if (!gateway) return { kind: "unavailable", message: "Der Speicherstatus konnte nicht bestätigt werden." } satisfies CandidateMutationResult;
+    const result = await gateway.confirmCandidate({ candidateId, expectedVersion, payload, idempotencyKey });
+    await reload();
+    return result;
+  }, [gateway, reload]);
+
   const value = useMemo<DocumentContextValue>(
-    () => ({ state, realtimeStatus, isRefreshing, isUploading: activeUploads > 0, reload, upload, download, startExtraction }),
-    [activeUploads, download, isRefreshing, realtimeStatus, reload, startExtraction, state, upload]
+    () => ({ state, realtimeStatus, isRefreshing, isUploading: activeUploads > 0, reload, upload, download, startExtraction, getCandidate, saveCandidateReview, discardCandidate, confirmCandidate }),
+    [activeUploads, confirmCandidate, discardCandidate, download, getCandidate, isRefreshing, realtimeStatus, reload, saveCandidateReview, startExtraction, state, upload]
   );
   return <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>;
 }

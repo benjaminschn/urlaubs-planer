@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   currentPathFromLocation,
+  candidateRouteFromPath,
   hashForPath,
   normalizePath,
   routeFromHash,
@@ -39,5 +40,14 @@ describe("Hash-Routing und Redirect-Merker", () => {
     expect(travelItemRouteFromPath("/events/new")).toEqual({ kind: "create", path: "/events/new" });
     expect(routeFromHash("#/events/foreign/edit")).toMatchObject({ kind: "protected", known: true });
     expect(safeRedirectTarget("javascript:alert(1)")).toBe("/app");
+  });
+
+  it("erkennt genau einen internen Candidate-Prüfpfad", () => {
+    expect(candidateRouteFromPath("/candidates/66666666-6666-4666-8666-000000000002")).toEqual({
+      kind: "review",
+      path: "/candidates/66666666-6666-4666-8666-000000000002",
+      candidateId: "66666666-6666-4666-8666-000000000002"
+    });
+    expect(candidateRouteFromPath("/candidates/one/more")).toBeNull();
   });
 });

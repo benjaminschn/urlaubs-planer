@@ -23,6 +23,8 @@ function item(id: string, localDate: string, stableSortKey: string, instantUtc: 
     bookingStatus: "confirmed",
     lifecycleStatus: "active",
     creationSource: "manual",
+    createdFromCandidateId: null,
+    documentIds: [],
     startTime,
     endTime: null,
     locations: { main: null, start: null, end: null },

@@ -3,6 +3,7 @@ export const defaultProtectedRoute = "/app";
 
 const protectedRoutes = new Set(["/app", "/timeline", "/documents", "/trip"]);
 const travelItemRoutePattern = /^\/events\/(new|[A-Za-z0-9-]+)(\/edit)?$/;
+const candidateRoutePattern = /^\/candidates\/([A-Za-z0-9-]+)$/;
 
 export type AppRoute =
   | { kind: "login"; path: "/login" }
@@ -13,6 +14,8 @@ export type TravelItemRoute =
   | { kind: "create"; path: string }
   | { kind: "detail"; path: string; itemId: string }
   | { kind: "edit"; path: string; itemId: string };
+
+export type CandidateRoute = { kind: "review"; path: string; candidateId: string };
 
 export function normalizePath(path: string): string {
   const withoutHash = path.startsWith("#") ? path.slice(1) : path.split("#", 1)[0] ?? "";
@@ -39,7 +42,13 @@ export function routeFromHash(hash: string): AppRoute {
   if (path === "/invite") {
     return { kind: "invite_disabled", path: "/invite" };
   }
-  return { kind: "protected", path, known: protectedRoutes.has(path) || travelItemRoutePattern.test(path) };
+  return { kind: "protected", path, known: protectedRoutes.has(path) || travelItemRoutePattern.test(path) || candidateRoutePattern.test(path) };
+}
+
+export function candidateRouteFromPath(path: string): CandidateRoute | null {
+  const normalized = normalizePath(path);
+  const match = normalized.match(candidateRoutePattern);
+  return match ? { kind: "review", path: normalized, candidateId: match[1] } : null;
 }
 
 export function travelItemRouteFromPath(path: string): TravelItemRoute | null {

@@ -60,4 +60,23 @@ describe("private Dokumente", () => {
     expect(screen.getByText("Erkannte Unterkunft")).toBeInTheDocument();
     expect(screen.getByText("Die Vorschläge sind noch nicht bestätigt und erscheinen nicht in der Timeline.")).toBeInTheDocument();
   });
+
+  it("bewahrt Korrekturen, zeigt Herkunft und bestätigt nur ausdrücklich", async () => {
+    const { user } = await signInAndOpenDocuments();
+    await user.upload(screen.getByLabelText("Dateien auswählen"), new File(["%PDF-1.7\npassive\n%%EOF"], "beleg.pdf", { type: "application/pdf" }));
+    await user.click(await screen.findByRole("button", { name: "Verarbeitung starten" }));
+    await user.click(await screen.findByRole("button", { name: "Jetzt kontrollieren" }));
+
+    expect(await screen.findByRole("heading", { name: "Ereignis kontrollieren" })).toBeInTheDocument();
+    expect(screen.getAllByText("Im Original · 95 %")).toHaveLength(2);
+    expect(screen.getByText(/Beispielbestätigung/)).toBeInTheDocument();
+    const title = screen.getByLabelText("Titel *");
+    await user.clear(title);
+    await user.type(title, "Geprüfte Unterkunft");
+    await user.click(screen.getByRole("button", { name: "Korrekturen speichern" }));
+    expect(await screen.findByText(/Korrektur gespeichert/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ereignis bestätigen" }));
+    expect(window.location.hash).toBe("#/events/77777777-7777-4777-8777-777777777777");
+  });
 });

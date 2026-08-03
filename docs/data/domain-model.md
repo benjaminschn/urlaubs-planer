@@ -215,7 +215,7 @@ Ein aus einem ExtractionRun hervorgegangener, editierbarer Ereignisvorschlag. Er
 | `discarded_by_user_id` | FK → User, O | Verwerfender Nutzer. |
 | `version` | P | Optimistische Version der bearbeitbaren Kandidatenansicht. |
 
-Ein Candidate enthält seine Werte und Herkunft über `CandidateField`; Nutzerkorrekturen werden über `CandidateCorrection` nachvollziehbar. Der wirksame Prüfstand ergibt sich aus Originalfeldern plus Korrekturen.
+Ein Candidate enthält seine Werte und Herkunft über `CandidateField`; Nutzerkorrekturen werden über `CandidateCorrection` nachvollziehbar. Der wirksame Prüfstand ergibt sich aus Originalfeldern plus Korrekturen. Beim Verwerfen bleiben Candidate, Originalfelder, Korrekturen und Originaldokument erhalten; `discarded` ist terminal und erzeugt kein TravelItem.
 
 ### 4.8 TravelItem
 
@@ -312,7 +312,7 @@ Append-only-Korrektur eines Kandidatenfelds.
 | `field_path`, `occurrence_key` | P/O | Betroffener fachlicher Wert. |
 | `operation` | P | `set`, `remove`, `add_occurrence`, `remove_occurrence` oder `reorder`. |
 | `previous_effective_value` | O | Vor der Korrektur wirksamer Wert zur Konflikt- und Herkunftsprüfung. |
-| `corrected_value` | O | Neuer Wert; bei Entfernen leer. |
+| `new_value` | P | Neuer Wert; bei Entfernen wird die Entfernen-Operation mit einem expliziten JSON-`null` protokolliert. |
 | `reason` | O | Optionale kurze Nutzerbegründung. |
 | `corrected_by_user_id` | FK → User, P | Korrigierendes Mitglied. |
 | `corrected_at` | P | Technischer UTC-Zeitpunkt. |
@@ -328,10 +328,9 @@ Protokolliert die eine ausdrückliche Bestätigung eines Kandidaten und macht si
 | --- | --- | --- |
 | `id` | PK, P | Technische Bestätigungs-ID. |
 | `candidate_id` | FK → ExtractionCandidate, UK, P | Genau einmal bestätigbarer Kandidat. |
-| `travel_item_id` | FK → TravelItem, P | Erzeugtes oder aktualisiertes Ereignis. |
-| `confirmation_mode` | P | `create` oder `update`. |
-| `target_base_version` | O | Bei Update die erwartete bisherige TravelItem-Version. |
-| `resulting_travel_item_version` | P | Atomar erzeugte neue Version. |
+| `travel_item_id` | FK → TravelItem, P | Erzeugtes Ereignis. |
+| `confirmation_mode` | P | Im MVP ausschließlich `create`. |
+| `candidate_version` | P | Bestätigte Candidate-Version. |
 | `idempotency_key` | UK, P | Schutz gegen wiederholte Bestätigungsanfragen. |
 | `confirmed_by_user_id` | FK → User, P | Bestätigendes Mitglied. |
 | `confirmed_at` | P | Technischer UTC-Zeitpunkt. |
@@ -499,7 +498,7 @@ Regeln:
 | Document – ExtractionRun | 1:n | Re-Extraktion/Retry bleibt historisch unterscheidbar. |
 | ExtractionRun – ExtractionCandidate | 1:n | Ein Dokumentlauf kann mehrere Ereignisvorschläge erzeugen. |
 | ExtractionCandidate – CandidateConfirmation | 1:0..1 | Ein Kandidat wird höchstens einmal bestätigt. |
-| CandidateConfirmation – TravelItem | n:1 | Mehrere Kandidaten können über die Zeit dasselbe TravelItem ausdrücklich aktualisieren. |
+| CandidateConfirmation – TravelItem | 1:1 im MVP | Jede Bestätigung erzeugt genau ein neues TravelItem; ein Update-Modus ist nicht freigegeben. |
 | Trip – TravelItem | 1:n | Im MVP höchstens 30 nicht gelöschte bestätigte Ereignisse. |
 | Document – TravelItem | n:m | Ein Dokument kann mehrere Ereignisse belegen; ein Ereignis kann mehrere Originale besitzen. |
 | Trip – Location | 1:n | Orte sind reisenspezifisch. |
@@ -566,7 +565,7 @@ Die Bestätigung ist keine einfache Statusänderung, sondern eine atomare fachli
 1. Mitgliedschaft, Candidate-Status und erwartete Candidate-Version prüfen.
 2. Effektive Werte aus Original und Korrekturen bilden.
 3. Pflichtfelder, Ereignisart, Zeitregeln, Segmentregeln und Reisengrenzen validieren.
-4. Bei `create` ein neues TravelItem oder bei `update` die erwartete TravelItem-Version sperr-/konfliktsicher ändern.
+4. Im freigegebenen MVP-`create`-Modus genau ein neues TravelItem anlegen; bestehende TravelItems werden nicht verändert.
 5. Passende typspezifische Details schreiben.
 6. TravelItemRevision anlegen.
 7. Alle Herkunftsdokumente über TravelItemDocument verknüpfen.
@@ -579,7 +578,7 @@ Wiederholung mit demselben Idempotenzschlüssel liefert dasselbe Ergebnis. Ein a
 ```mermaid
 stateDiagram-v2
     [*] --> active: manuell angelegt oder Kandidat bestätigt
-    active --> active: manuell bearbeitet oder Kandidat bestätigt
+    active --> active: manuell bearbeitet
     active --> deleted: Ereignis gesondert löschen
 ```
 
@@ -598,7 +597,7 @@ Für eine spätere Phase: `pending → accepted | expired | revoked`. Im MVP ist
 5. Ein ExtractionRun verarbeitet genau ein Document; ein Document kann mehrere zeitlich unterscheidbare Runs besitzen.
 6. Ein erfolgreicher Run kann null, einen oder mehrere Kandidaten erzeugen.
 7. Ein Candidate ist unbestätigt und erscheint nie in der Timeline.
-8. Nur eine erfolgreiche, ausdrückliche CandidateConfirmation darf aus Kandidatenwerten ein TravelItem erzeugen oder aktualisieren.
+8. Nur eine erfolgreiche, ausdrückliche CandidateConfirmation darf aus Kandidatenwerten ein neues TravelItem erzeugen; ein Update bestehender TravelItems ist im MVP ausgeschlossen.
 9. Derselbe Candidate kann höchstens einmal bestätigt werden; Bestätigungen sind idempotent.
 10. Extraktionsergebnisse überschreiben niemals ohne Bestätigung ein bestehendes TravelItem.
 11. `CandidateField.original_value` ist unveränderlich. Korrekturen sind append-only und nennen Wert, Operation, Akteur, Zeitpunkt und Version.
@@ -739,20 +738,18 @@ Ein administrativer, dokumentierter Gesamtlöschweg für Auth-Konten, Trip-Daten
 
 Vor dem physischen Schema beziehungsweise der jeweiligen Funktion sind noch zu entscheiden:
 
-1. **Aufbewahrung verworfener Kandidaten:** Ob und wie lange Candidate, Korrekturen und Original nach `discarded` verfügbar bleiben.
-2. **Dokumentlöschung:** Ob ein Nutzer ein verknüpftes Original löschen darf, welche Warnung nötig ist und welche minimalen Metadaten als Herkunftstombstone verbleiben.
-3. **Dokument ohne Ereignis:** Wo hochgeladene Dokumente mit fehlgeschlagener Extraktion oder verworfenem Kandidaten in der UI erreichbar bleiben.
-4. **Kandidatenaktualisierung:** Nach welcher UX-Regel ein Candidate ein bestehendes TravelItem aktualisieren darf und wie das Zielereignis eindeutig gewählt wird. Automatische Zuordnung ist ausgeschlossen.
-5. **Teilstrecken-Gruppierung:** Fachliche Regel für mehrere Ereignisse versus Segmente; Hin- und Rückreise bleiben grundsätzlich getrennte TravelItems.
-6. **Gemischte Zeitpräzision:** Für manuelle TravelItems gilt in Schnitt 3: Ein sicher früheres lokales Datum wird abgelehnt; bei zwei exakten Werten entscheidet der UTC-Instant. Bei gemischter Präzision werden nur sicher ableitbare Widersprüche abgelehnt.
-7. **Zeitzonen-Eingabe:** Schnitt 3 verlangt bei exakten manuellen Zeiten eine ausdrücklich eingegebene IANA-Zone. Die Gerätezeitzone wird nie automatisch übernommen; mehrdeutige und nicht existente DST-Ortszeiten werden bis zur Korrektur blockiert.
-8. **Location-Deduplizierung:** Ob Nutzer Orte später bewusst zusammenführen können; im MVP ist keine automatische Deduplizierung erforderlich.
-9. **Physische Detailrepräsentation:** Für Schnitt 3 ist ein Hybrid festgelegt: TravelItem-Basis, LocalTimeValue-Sortierspalten, Locations, typisierte Detailtabellen und Verkehrssegmente sind relational; gemeinsame beziehungsweise typspezifische optionale Wertgruppen liegen in objektförmigen JSONB-Hüllen mit serverseitiger Schema-, Zeit- und Geheimnisvalidierung.
-10. **Wiederholbare Wertgruppen:** Für Schnitt 3 werden Referenzen, Reisende, Kontakte, Preise, Bedingungen und Zusatzattribute in `travel_items.common_details` beziehungsweise der passenden Detail-/Segment-JSONB-Spalte gespeichert. Eine spätere Suchoptimierung darf daraus additive abhängige Tabellen machen.
-11. **ID-Variante:** UUIDv7 gegenüber unmittelbar verfügbarer UUID-Generierung; IDs müssen jedenfalls undurchsichtig und client-/storage-tauglich sein.
-12. **Revisionsaufbewahrung:** Dauer, Umfang und Datenschutzkonzept der technischen TravelItem-Historie, da ein sichtbarer Änderungsverlauf kein MVP-Ziel ist.
-13. **Invitation-Aktivierung:** Das Zukunftsmodell bleibt bis zu einer neuen Produktentscheidung technisch und fachlich deaktiviert.
-14. **Trip-Lebenszyklus:** Ob `closed` tatsächlich eingeführt wird; mehrere Reisen und Archive gehören nicht zum MVP.
-15. **Mengenlimits bei Tombstones:** Die Grenze von 30 TravelItems zählt in Schnitt 3 nur aktive, nicht gelöschte Ereignisse. Gelöschte TravelItems bleiben als fachlicher Tombstone und Revision erhalten und unterliegen der getrennten Aufbewahrungsentscheidung.
+1. **Dokumentlöschung:** Ob ein Nutzer ein verknüpftes Original löschen darf, welche Warnung nötig ist und welche minimalen Metadaten als Herkunftstombstone verbleiben.
+2. **Dokument ohne Ereignis:** Wo hochgeladene Dokumente mit fehlgeschlagener Extraktion oder verworfenem Kandidaten in der UI erreichbar bleiben.
+3. **Kandidatenaktualisierung nach dem MVP:** Der freigegebene Pfad ist create-only. Ein späterer Update-Modus benötigt eine neue Produktentscheidung und eindeutige Zielauswahl; automatische Zuordnung bleibt ausgeschlossen.
+4. **Gemischte Zeitpräzision:** Für manuelle TravelItems gilt in Schnitt 3: Ein sicher früheres lokales Datum wird abgelehnt; bei zwei exakten Werten entscheidet der UTC-Instant. Bei gemischter Präzision werden nur sicher ableitbare Widersprüche abgelehnt.
+5. **Zeitzonen-Eingabe:** Schnitt 3 verlangt bei exakten manuellen Zeiten eine ausdrücklich eingegebene IANA-Zone. Die Gerätezeitzone wird nie automatisch übernommen; mehrdeutige und nicht existente DST-Ortszeiten werden bis zur Korrektur blockiert.
+6. **Location-Deduplizierung:** Ob Nutzer Orte später bewusst zusammenführen können; im MVP ist keine automatische Deduplizierung erforderlich.
+7. **Physische Detailrepräsentation:** Für Schnitt 3 ist ein Hybrid festgelegt: TravelItem-Basis, LocalTimeValue-Sortierspalten, Locations, typisierte Detailtabellen und Verkehrssegmente sind relational; gemeinsame beziehungsweise typspezifische optionale Wertgruppen liegen in objektförmigen JSONB-Hüllen mit serverseitiger Schema-, Zeit- und Geheimnisvalidierung.
+8. **Wiederholbare Wertgruppen:** Für Schnitt 3 werden Referenzen, Reisende, Kontakte, Preise, Bedingungen und Zusatzattribute in `travel_items.common_details` beziehungsweise der passenden Detail-/Segment-JSONB-Spalte gespeichert. Eine spätere Suchoptimierung darf daraus additive abhängige Tabellen machen.
+9. **ID-Variante:** UUIDv7 gegenüber unmittelbar verfügbarer UUID-Generierung; IDs müssen jedenfalls undurchsichtig und client-/storage-tauglich sein.
+10. **Revisionsaufbewahrung:** Dauer, Umfang und Datenschutzkonzept der technischen TravelItem-Historie, da ein sichtbarer Änderungsverlauf kein MVP-Ziel ist.
+11. **Invitation-Aktivierung:** Das Zukunftsmodell bleibt bis zu einer neuen Produktentscheidung technisch und fachlich deaktiviert.
+12. **Trip-Lebenszyklus:** Ob `closed` tatsächlich eingeführt wird; mehrere Reisen und Archive gehören nicht zum MVP.
+13. **Mengenlimits bei Tombstones:** Die Grenze von 30 TravelItems zählt in Schnitt 3 nur aktive, nicht gelöschte Ereignisse. Gelöschte TravelItems bleiben als fachlicher Tombstone und Revision erhalten und unterliegen der getrennten Aufbewahrungsentscheidung.
 
 Diese offenen Punkte verhindern nicht die fachliche Trennung von Original, Extraktionslauf, Kandidat und bestätigtem Ereignis. Sie müssen jedoch vor der jeweils betroffenen Implementierung verbindlich entschieden und durch Invarianten sowie Berechtigungstests abgesichert werden.

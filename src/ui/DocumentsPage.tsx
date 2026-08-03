@@ -8,6 +8,7 @@ import {
 import type { Document } from "../documents/types";
 import { documentErrorMessage, isInlineDocumentType, validateDocumentSelection } from "../documents/validation";
 import { candidateStartDate, candidateTitle, candidateWarnings, extractionErrorMessage, extractionStatusLabels } from "../documents/extraction";
+import { useRouter } from "../router/HashRouter";
 
 type QueueEntry = {
   id: string;
@@ -48,6 +49,7 @@ function queueStatusLabel(status: QueueEntry["status"]): string {
 }
 
 export function DocumentsPage() {
+  const { navigate } = useRouter();
   const { state, isRefreshing, isUploading, upload, download, startExtraction } = useDocuments();
   const [queue, setQueue] = useState<QueueEntry[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -222,8 +224,10 @@ export function DocumentsPage() {
                           {run.candidates.map((candidate) => (
                             <li key={candidate.id}>
                               <strong>{candidateTitle(candidate)}</strong>
-                              <span>{candidate.proposedEventTypeCode} · {candidateStartDate(candidate) ?? "Startdatum unbekannt"}</span>
+                              <span>{candidate.proposedEventTypeCode} · {candidateStartDate(candidate) ?? "Startdatum unbekannt"} · {candidate.status === "draft" ? "Prüfung offen" : candidate.status === "confirmed" ? "Bestätigt" : candidate.status === "discarded" ? "Verworfen" : "Ersetzt"}</span>
                               {candidateWarnings(run, candidate).length > 0 ? <ul className="candidate-warning-list">{candidateWarnings(run, candidate).map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}</li>)}</ul> : null}
+                              {candidate.status === "draft" ? <button type="button" className="secondary-button" onClick={() => navigate(`/candidates/${candidate.id}`)}>Jetzt kontrollieren</button> : null}
+                              {candidate.status === "confirmed" && candidate.confirmedTravelItemId ? <button type="button" className="secondary-button" onClick={() => navigate(`/events/${candidate.confirmedTravelItemId}`)}>Bestätigtes Ereignis öffnen</button> : null}
                             </li>
                           ))}
                         </ul>

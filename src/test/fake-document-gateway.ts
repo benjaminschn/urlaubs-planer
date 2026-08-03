@@ -177,9 +177,12 @@ export function createFakeDocumentGateway(options: { tripId?: string; documents?
           candidateIndex: 0,
           proposedEventTypeCode: "accommodation",
           status: "draft",
+          version: 1,
+          canonicalPayload: null,
+          confirmedTravelItemId: null,
           fields: [
-            { fieldPath: "title", occurrenceKey: "", value: "Erkannte Unterkunft", provenance: "explicit", confidence: 0.95, sourceLocator: [{ pageNumber: 1, sourceHint: "Beispielbestätigung" }] },
-            { fieldPath: "start.local_date", occurrenceKey: "", value: "2026-09-01", provenance: "explicit", confidence: 0.95, sourceLocator: [{ pageNumber: 1, sourceHint: "Anreise" }] }
+            { fieldPath: "title", occurrenceKey: "", originalValue: "Erkannte Unterkunft", value: "Erkannte Unterkunft", provenance: "explicit", confidence: 0.95, sourceLocator: [{ pageNumber: 1, sourceHint: "Beispielbestätigung" }] },
+            { fieldPath: "start.local_date", occurrenceKey: "", originalValue: "2026-09-01", value: "2026-09-01", provenance: "explicit", confidence: 0.95, sourceLocator: [{ pageNumber: 1, sourceHint: "Anreise" }] }
           ],
           warnings: []
         }]
@@ -187,6 +190,39 @@ export function createFakeDocumentGateway(options: { tripId?: string; documents?
       extractionRuns = [run, ...extractionRuns];
       signal();
       return { kind: "accepted", run };
+    },
+    async saveCandidateReview(input) {
+      let updated = false;
+      extractionRuns = extractionRuns.map((run) => ({ ...run, candidates: run.candidates.map((candidate) => {
+        if (candidate.id !== input.candidateId || candidate.version !== input.expectedVersion || candidate.status !== "draft") return candidate;
+        updated = true;
+        return { ...candidate, canonicalPayload: input.payload, version: candidate.version + 1 };
+      }) }));
+      signal();
+      return updated
+        ? { kind: "updated", candidateId: input.candidateId, version: input.expectedVersion + 1 }
+        : { kind: "conflict", candidateId: input.candidateId, version: input.expectedVersion, message: "Der Entwurf wurde zwischenzeitlich geändert." };
+    },
+    async discardCandidate(input) {
+      let updated = false;
+      extractionRuns = extractionRuns.map((run) => ({ ...run, candidates: run.candidates.map((candidate) => {
+        if (candidate.id !== input.candidateId || candidate.version !== input.expectedVersion || candidate.status !== "draft") return candidate;
+        updated = true;
+        return { ...candidate, status: "discarded", version: candidate.version + 1 };
+      }) }));
+      signal();
+      return updated
+        ? { kind: "discarded", candidateId: input.candidateId, version: input.expectedVersion + 1 }
+        : { kind: "forbidden", message: "Der Entwurf ist nicht verfügbar." };
+    },
+    async confirmCandidate(input) {
+      const candidate = extractionRuns.flatMap((run) => run.candidates).find((item) => item.id === input.candidateId);
+      if (!candidate || candidate.status !== "draft") return { kind: "forbidden", message: "Der Entwurf ist nicht verfügbar." };
+      if (candidate.version !== input.expectedVersion) return { kind: "conflict", candidateId: input.candidateId, version: candidate.version, message: "Der Entwurf wurde zwischenzeitlich geändert." };
+      if (!candidate.canonicalPayload || JSON.stringify(candidate.canonicalPayload) !== JSON.stringify(input.payload)) return { kind: "validation", message: "Der geprüfte Stand muss gespeichert werden." };
+      extractionRuns = extractionRuns.map((run) => ({ ...run, candidates: run.candidates.map((item) => item.id === input.candidateId ? { ...item, status: "confirmed", version: item.version + 1, confirmedTravelItemId: "77777777-7777-4777-8777-777777777777" } : item) }));
+      signal();
+      return { kind: "created", candidateId: input.candidateId, travelItemId: "77777777-7777-4777-8777-777777777777", version: 1 };
     },
     subscribeToDocuments({ onSignal, onStatus }) {
       calls.subscribe += 1;

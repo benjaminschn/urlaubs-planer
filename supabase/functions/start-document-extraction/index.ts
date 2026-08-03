@@ -2,6 +2,7 @@ import Ajv from "https://esm.sh/ajv@8.17.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.111.0";
 import extractionSchema from "../../../schemas/extraction.schema.json" with { type: "json" };
 import { validateAndAdapt } from "../_shared/extraction-semantics.ts";
+import { buildOpenAIResponseBody, openAIFilePurpose, safeOpenAIErrorCode } from "../_shared/openai-request.ts";
 
 const bucket = "travel-documents";
 const schemaVersion = "1.0.0";
@@ -59,10 +60,19 @@ function safeError(code: string, retryable = false, runErrorCode = code): { code
   return { code, retryable, runErrorCode };
 }
 
-function providerHttpError(stage: "file_upload" | "response", status: number): { kind: "error"; code: string; retryable: boolean; runErrorCode: string } {
+function providerHttpError(stage: "file_upload" | "response", status: number, providerBody?: unknown): { kind: "error"; code: string; retryable: boolean; runErrorCode: string } {
   const retryable = status === 408 || status === 429 || status >= 500;
   const code = retryable ? "provider_unavailable" : "provider_rejected";
-  return { kind: "error", ...safeError(code, retryable, `${code}_${stage}_${status}`) };
+  const providerCode = safeOpenAIErrorCode(providerBody);
+  return { kind: "error", ...safeError(code, retryable, `${code}_${stage}_${status}${providerCode ? `_${providerCode}` : ""}`) };
+}
+
+async function providerErrorBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 function decodeJwtPayload(token: string): RecordLike | null {
@@ -111,32 +121,30 @@ async function providerExtraction(bytes: Uint8Array, contentType: string, docume
   try {
     const extension = contentType === "application/pdf" ? ".pdf" : contentType === "image/jpeg" ? ".jpg" : contentType === "image/png" ? ".png" : contentType === "image/webp" ? ".webp" : contentType === "image/gif" ? ".gif" : ".bin";
     const form = new FormData();
-    form.append("purpose", "user_data");
+    form.append("purpose", openAIFilePurpose(contentType));
     form.append("expires_after[anchor]", "created_at");
     form.append("expires_after[seconds]", "3600");
     form.append("file", new File([bytes], `extraction-${documentId}${extension}`, { type: contentType }));
     const uploaded = await fetch("https://api.openai.com/v1/files", { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal: AbortSignal.timeout(90000) });
-    if (!uploaded.ok) return providerHttpError("file_upload", uploaded.status);
+    if (!uploaded.ok) return providerHttpError("file_upload", uploaded.status, await providerErrorBody(uploaded));
     const file = asRecord(await uploaded.json());
     if (!file || typeof file.id !== "string") return { kind: "error", ...safeError("provider_unavailable", true, "provider_unavailable_file_upload_invalid_response") };
     providerFileId = file.id;
     const providerResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(buildOpenAIResponseBody({
         model,
-        store: false,
-        max_output_tokens: maxOutputTokens,
+        maxOutputTokens,
         instructions: SYSTEM_PROMPT,
-        input: [
-          { role: "developer", content: [{ type: "input_text", text: DEVELOPER_PROMPT }] },
-          { role: "user", content: [{ type: "input_file", file_id: providerFileId }] }
-        ],
-        text: { format: { type: "json_schema", name: "travel_document_extraction", strict: true, schema: extractionSchema } }
-      }),
+        prompt: DEVELOPER_PROMPT,
+        providerFileId,
+        contentType,
+        schema: extractionSchema
+      })),
       signal: AbortSignal.timeout(90000)
     });
-    if (!providerResponse.ok) return providerHttpError("response", providerResponse.status);
+    if (!providerResponse.ok) return providerHttpError("response", providerResponse.status, await providerErrorBody(providerResponse));
     return { kind: "ok", body: await providerResponse.json() };
   } catch (error) {
     const timedOut = error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError");

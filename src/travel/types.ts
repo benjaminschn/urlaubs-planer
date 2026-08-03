@@ -122,6 +122,8 @@ export type TravelItem = {
   bookingStatus: BookingStatus;
   lifecycleStatus: "active" | "deleted";
   creationSource: "manual" | "candidate_confirmation";
+  createdFromCandidateId: string | null;
+  documentIds: string[];
   startTime: LocalTimeValue;
   endTime: LocalTimeValue | null;
   locations: {

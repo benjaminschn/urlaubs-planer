@@ -274,7 +274,7 @@ Hin- und Rückreise werden grundsätzlich als getrennte Ereignisse angeboten. Nu
 - Das Originaldokument kann während der Prüfung geöffnet werden, ohne dass bereits vorgenommene Korrekturen verloren gehen.
 - Ein Dokument mit mehreren Buchungen kann mehrere getrennt prüfbare Entwürfe erzeugen.
 - Pflichtfeld- und Zeitfehler verhindern die Bestätigung, nicht aber das weitere Bearbeiten oder den Zugriff auf das Original.
-- Ein verworfener Entwurf erzeugt kein Timeline-Ereignis. Die Auswirkung auf das Original wird erst nach Festlegung der offenen Aufbewahrungsregel verbindlich formuliert.
+- Ein verworfener Entwurf erzeugt kein Timeline-Ereignis. Original, erkannte Werte und gespeicherte Korrekturen bleiben zur Nachvollziehbarkeit erhalten; nur der Entwurf wird terminal als verworfen markiert.
 
 ## 11. Hauptfluss: Ereignis bestätigen
 
@@ -360,7 +360,7 @@ Nicht vorhandene optionale Felder werden im Lesemodus weggelassen, statt als lan
 - Eine fehlende oder fehlgeschlagene Vorschau verhindert nicht den angebotenen Abruf des Originals, sofern dieses verfügbar ist.
 - Ohne gültige Anmeldung ist das Original auch über einen zuvor kopierten direkten Link nicht zugänglich.
 - Dokumentfehler zeigen eine Wiederholungsmöglichkeit und verändern keine Ereignisse oder Entwürfe.
-- Die UX behauptet keine endgültige Aufbewahrungs- oder Löschwirkung, bis die offenen Regeln für verworfene Entwürfe und gelöschte Ereignisse entschieden sind.
+- Das Verwerfen eines Entwurfs und das Löschen eines Ereignisses löschen kein Originaldokument. Die Herkunftsverknüpfung bleibt als Nachweis bestehen.
 
 ## 14. Leere Zustände, Ladezustände und Fehlerzustände
 
@@ -442,10 +442,7 @@ Diese Punkte sind laut Produktbrief offen und beeinflussen Texte oder Detailverh
 
 1. konkretes Anmeldeverfahren für die zwei vorhandenen Konten;
 2. lokale Datei- und Mengenlimits;
-3. Aufbewahrung eines Originaldokuments nach Verwerfen aller Entwürfe;
-4. Auswirkung des Ereignislöschens auf zugehörige Originaldokumente;
-5. Auswahl oder Vorschlag der fachlichen Zeitzone bei manueller Eingabe;
-6. zugelassene Extraktionssprachen neben Deutsch und Englisch;
-7. Regel für die vorgeschlagene Gruppierung zusammengehörender Teilstrecken.
+3. Auswahl oder Vorschlag der fachlichen Zeitzone bei manueller Eingabe;
+4. zugelassene Extraktionssprachen neben Deutsch und Englisch.
 
-Bis diese Entscheidungen fallen, müssen UI-Texte neutral bleiben und dürfen insbesondere keine Löschwirkung, Formatunterstützung oder automatische Gruppierungslogik versprechen, die produktseitig noch nicht festgelegt ist.
+Bis diese Entscheidungen fallen, müssen UI-Texte neutral bleiben und dürfen insbesondere keine Formatunterstützung versprechen, die produktseitig noch nicht festgelegt ist. Für Schnitte 6+7 gilt: Hin- und Rückreise bleiben getrennte Ereignisse; zusammengehörende gleichgerichtete Teilstrecken können innerhalb eines Candidates geordnet werden.

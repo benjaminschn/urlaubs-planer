@@ -75,6 +75,7 @@ export type ExtractionRunStatus = (typeof EXTRACTION_RUN_STATUSES)[number];
 export type ExtractionField = {
   fieldPath: string;
   occurrenceKey: string;
+  originalValue: unknown;
   value: unknown;
   provenance: "explicit" | "inferred" | "unknown";
   confidence: number | null;
@@ -93,6 +94,9 @@ export type ExtractionCandidate = {
   candidateIndex: number;
   proposedEventTypeCode: "accommodation" | "flight" | "rail" | "bus" | "activity";
   status: "draft" | "confirmed" | "discarded" | "superseded";
+  version: number;
+  canonicalPayload: Record<string, unknown> | null;
+  confirmedTravelItemId: string | null;
   fields: ExtractionField[];
   warnings: ExtractionWarning[];
 };
@@ -118,12 +122,21 @@ export type ExtractionStartResult =
   | { kind: "accepted"; run: ExtractionRun }
   | { kind: "limit" | "failed" | "unavailable"; message: string; code?: string };
 
+export type CandidateMutationResult =
+  | { kind: "updated" | "discarded"; candidateId: string; version: number }
+  | { kind: "created" | "replayed"; candidateId: string; travelItemId: string; version: number }
+  | { kind: "conflict"; candidateId: string; version: number; message: string }
+  | { kind: "validation" | "limit" | "forbidden" | "unavailable"; message: string; code?: string };
+
 export type DocumentGateway = {
   listDocuments: (tripId: string) => Promise<DocumentLoadResult>;
   uploadDocument: (input: DocumentUploadInput) => Promise<DocumentUploadResult>;
   downloadDocument: (input: { tripId: string; documentId: string }) => Promise<DocumentDownloadResult>;
   listExtractions: (tripId: string) => Promise<ExtractionLoadResult>;
   startExtraction: (input: { documentId: string; idempotencyKey: string }) => Promise<ExtractionStartResult>;
+  saveCandidateReview: (input: { candidateId: string; expectedVersion: number; payload: Record<string, unknown> }) => Promise<CandidateMutationResult>;
+  discardCandidate: (input: { candidateId: string; expectedVersion: number }) => Promise<CandidateMutationResult>;
+  confirmCandidate: (input: { candidateId: string; expectedVersion: number; idempotencyKey: string; payload: Record<string, unknown> }) => Promise<CandidateMutationResult>;
   subscribeToDocuments: (options: {
     tripId: string;
     onSignal: () => void;

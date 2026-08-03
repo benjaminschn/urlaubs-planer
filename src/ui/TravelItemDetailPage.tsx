@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDocuments } from "../documents/context";
 import { useRouter } from "../router/HashRouter";
 import { useTravelItems } from "../travel/context";
 import { createIdempotencyKey, eventTypeLabels, formatLocalDate, formatTimeRange } from "../travel/format";
@@ -91,9 +92,14 @@ export function TravelItemDetailPage() {
   const { route, navigate } = useRouter();
   const itemRoute = travelItemRouteFromPath(route.path);
   const { state, remove, isSaving, getItem } = useTravelItems();
+  const { state: documentState, download } = useDocuments();
   const [showDelete, setShowDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceDownloads, setSourceDownloads] = useState<Record<string, { url: string; fileName: string }>>({});
+  const sourceUrls = useRef<string[]>([]);
   const item = itemRoute?.kind === "detail" ? getItem(itemRoute.itemId) : null;
+
+  useEffect(() => () => sourceUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
 
   if (state.status === "loading") return <section className="state-card"><p>Ereignis wird geladen …</p></section>;
   if (!itemRoute || itemRoute.kind !== "detail" || !item) {
@@ -125,6 +131,22 @@ export function TravelItemDetailPage() {
     setShowDelete(false);
   }
 
+  async function loadSource(documentId: string) {
+    const result = await download(documentId);
+    if (result.kind !== "downloaded") {
+      setError(result.message);
+      return;
+    }
+    const url = URL.createObjectURL(result.blob);
+    sourceUrls.current.push(url);
+    setSourceDownloads((current) => ({ ...current, [documentId]: { url, fileName: result.fileName } }));
+  }
+
+  const sourceDocuments = selectedItem.documentIds.flatMap((documentId) => {
+    const document = documentState.documents.find((candidate) => candidate.id === documentId);
+    return document ? [document] : [];
+  });
+
   return (
     <section className="detail-page" aria-labelledby="travel-item-detail-title">
       <div className="page-heading">
@@ -137,6 +159,21 @@ export function TravelItemDetailPage() {
       </div>
       {error ? <div className="error-summary" role="alert"><p>{error}</p></div> : null}
       <TravelItemDetails item={selectedItem} />
+      {sourceDocuments.length > 0 ? (
+        <section className="detail-section" aria-labelledby="source-documents-title">
+          <h2 id="source-documents-title">Herkunftsdokumente</h2>
+          <ul className="detail-list">
+            {sourceDocuments.map((document) => (
+              <li key={document.id}>
+                <span>{document.originalFileName}</span>
+                {sourceDownloads[document.id]
+                  ? <a className="secondary-button download-link" href={sourceDownloads[document.id].url} download={sourceDownloads[document.id].fileName}>Original herunterladen</a>
+                  : <button className="secondary-button" type="button" onClick={() => void loadSource(document.id)}>Original laden</button>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <div className="detail-actions">
         <button className="secondary-button" type="button" onClick={() => navigate(`/events/${selectedItem.id}/edit`)}>Bearbeiten</button>
         <button className="danger-button" type="button" onClick={() => setShowDelete(true)}>Ereignis löschen</button>

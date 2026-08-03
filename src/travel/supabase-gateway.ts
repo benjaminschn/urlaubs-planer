@@ -25,6 +25,7 @@ const travelItemColumns = [
   "booking_status",
   "lifecycle_status",
   "creation_source",
+  "created_from_candidate_id",
   "start_time",
   "end_time",
   "main_location_id",
@@ -200,7 +201,8 @@ function mapItem(
   value: unknown,
   detailsByType: Map<string, RecordLike>,
   segmentsByType: Map<string, RecordLike[]>,
-  locations: Map<string, Location>
+  locations: Map<string, Location>,
+  documentIds: string[]
 ): TravelItem | null {
   const row = asRecord(value);
   if (!row || typeof row.id !== "string" || typeof row.trip_id !== "string" || typeof row.event_type_code !== "string") return null;
@@ -235,6 +237,8 @@ function mapItem(
     bookingStatus: bookingStatus as BookingStatus,
     lifecycleStatus: row.lifecycle_status === "deleted" ? "deleted" : "active",
     creationSource: row.creation_source === "candidate_confirmation" ? "candidate_confirmation" : "manual",
+    createdFromCandidateId: asString(row.created_from_candidate_id),
+    documentIds,
     startTime,
     endTime,
     locations: { main: mainLocation, start: startLocation, end: endLocation },
@@ -385,10 +389,17 @@ export function createSupabaseTravelItemGateway(client: SupabaseClient): TravelI
       ["rail_segments", segmentColumns],
       ["bus_segments", segmentColumns]
     ] as const;
-    const relatedResults = await Promise.all(
-      tables.map(([table, columns]) => client.from(table).select(columns).in("travel_item_id", ids))
-    );
-    if (relatedResults.some((result) => result.error)) return { kind: "unavailable" };
+    const [relatedResults, documentRelationResult] = await Promise.all([
+      Promise.all(tables.map(([table, columns]) => client.from(table).select(columns).in("travel_item_id", ids))),
+      client.from("travel_item_documents").select("travel_item_id,document_id").in("travel_item_id", ids)
+    ]);
+    if (relatedResults.some((result) => result.error) || documentRelationResult.error) return { kind: "unavailable" };
+    const documentIdsByItem = new Map<string, string[]>();
+    for (const raw of Array.isArray(documentRelationResult.data) ? documentRelationResult.data : []) {
+      const row = asRecord(raw);
+      if (typeof row?.travel_item_id !== "string" || typeof row.document_id !== "string") continue;
+      documentIdsByItem.set(row.travel_item_id, [...(documentIdsByItem.get(row.travel_item_id) ?? []), row.document_id]);
+    }
     const locationIds = new Set<string>();
     for (const row of baseRows) {
       const value = asRecord(row);
@@ -443,7 +454,8 @@ export function createSupabaseTravelItemGateway(client: SupabaseClient): TravelI
           row,
           new Map(detail ? [[base.event_type_code, detail]] : []),
           new Map(segmentRows.length ? [[base.event_type_code, segmentRows]] : []),
-          locations
+          locations,
+          documentIdsByItem.get(base.id) ?? []
         );
       })
       .filter((item): item is TravelItem => item !== null);

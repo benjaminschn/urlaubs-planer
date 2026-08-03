@@ -53,6 +53,8 @@ function itemFromPayload(tripId: string, payload: TravelItemPayload, id: string,
     bookingStatus: payload.bookingStatus,
     lifecycleStatus: "active",
     creationSource: "manual",
+    createdFromCandidateId: null,
+    documentIds: [],
     startTime: payload.startTime,
     endTime: payload.endTime,
     locations: {

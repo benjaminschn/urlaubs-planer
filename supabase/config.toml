@@ -11,8 +11,8 @@ verify_jwt = true
 
 [auth]
 enabled = true
-site_url = "http://127.0.0.1:4173"
-additional_redirect_urls = ["http://localhost:4173", "http://127.0.0.1:4173"]
+site_url = "https://benjaminschn.github.io/urlaubs-planer/"
+additional_redirect_urls = ["https://benjaminschn.github.io/urlaubs-planer/"]
 jwt_expiry = 900
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
@@ -20,7 +20,7 @@ enable_signup = false
 enable_anonymous_sign_ins = false
 
 [auth.email]
-enable_signup = false
+enable_signup = true
 
 [auth.mfa]
 max_enrolled_factors = 1

@@ -9,6 +9,8 @@ import { TravelItemDetailPage } from "./TravelItemDetailPage";
 import { TravelItemFormPage } from "./TravelItemFormPage";
 import { travelItemRouteFromPath } from "../router/routes";
 import { DocumentsPage } from "./DocumentsPage";
+import { CandidateReviewPage } from "./CandidateReviewPage";
+import { candidateRouteFromPath } from "../router/routes";
 
 export function ProtectedShell() {
   const { signOut } = useAuth();
@@ -31,6 +33,7 @@ export function ProtectedShell() {
 
   const isHome = route.path === "/app" || route.path === "/timeline";
   const travelItemRoute = travelItemRouteFromPath(route.path);
+  const candidateRoute = candidateRouteFromPath(route.path);
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
@@ -75,6 +78,7 @@ export function ProtectedShell() {
         {travelItemRoute?.kind === "create" || travelItemRoute?.kind === "edit" ? <TravelItemFormPage /> : null}
         {travelItemRoute?.kind === "detail" ? <TravelItemDetailPage /> : null}
         {route.path === "/documents" ? <DocumentsPage /> : null}
+        {candidateRoute ? <CandidateReviewPage /> : null}
       </main>
     </div>
   );
