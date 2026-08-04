@@ -9,6 +9,8 @@ import type { Document } from "../documents/types";
 import { documentErrorMessage, isInlineDocumentType, validateDocumentSelection } from "../documents/validation";
 import { candidateStartDate, candidateTitle, candidateWarnings, extractionErrorMessage, extractionStatusLabels } from "../documents/extraction";
 import { useRouter } from "../router/HashRouter";
+import { eventTypeLabels, formatLocalDate } from "../travel/format";
+import type { EventTypeCode } from "../travel/types";
 
 type QueueEntry = {
   id: string;
@@ -221,15 +223,34 @@ export function DocumentsPage() {
                       <div className="candidate-list">
                         <p className="eyebrow">Unbestätigte Vorschläge</p>
                         <ul>
-                          {run.candidates.map((candidate) => (
+                          {run.candidates.map((candidate) => {
+                            const typeCode = candidate.proposedEventTypeCode as EventTypeCode;
+                            const typeLabel = eventTypeLabels[typeCode] ?? candidate.proposedEventTypeCode;
+                            const start = candidateStartDate(candidate);
+                            const statusLabel =
+                              candidate.status === "draft"
+                                ? "Prüfung offen"
+                                : candidate.status === "confirmed"
+                                  ? "Bestätigt"
+                                  : candidate.status === "discarded"
+                                    ? "Verworfen"
+                                    : "Ersetzt";
+                            return (
                             <li key={candidate.id}>
                               <strong>{candidateTitle(candidate)}</strong>
-                              <span>{candidate.proposedEventTypeCode} · {candidateStartDate(candidate) ?? "Startdatum unbekannt"} · {candidate.status === "draft" ? "Prüfung offen" : candidate.status === "confirmed" ? "Bestätigt" : candidate.status === "discarded" ? "Verworfen" : "Ersetzt"}</span>
+                              <span className="muted">
+                                {typeLabel}
+                                {" · "}
+                                {start ? formatLocalDate(start) : "Startdatum unbekannt"}
+                                {" · "}
+                                {statusLabel}
+                              </span>
                               {candidateWarnings(run, candidate).length > 0 ? <ul className="candidate-warning-list">{candidateWarnings(run, candidate).map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}</li>)}</ul> : null}
                               {candidate.status === "draft" ? <button type="button" className="secondary-button" onClick={() => navigate(`/candidates/${candidate.id}`)}>Jetzt kontrollieren</button> : null}
                               {candidate.status === "confirmed" && candidate.confirmedTravelItemId ? <button type="button" className="secondary-button" onClick={() => navigate(`/events/${candidate.confirmedTravelItemId}`)}>Bestätigtes Ereignis öffnen</button> : null}
                             </li>
-                          ))}
+                            );
+                          })}
                         </ul>
                         <p className="muted">Die Vorschläge sind noch nicht bestätigt und erscheinen nicht in der Timeline.</p>
                       </div>

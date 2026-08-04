@@ -2,7 +2,7 @@ import { useRouter } from "../router/HashRouter";
 import { formatTripDateRange } from "../trip/format";
 import { useTrip } from "../trip/context";
 import { useTravelItems } from "../travel/context";
-import { eventTypeLabels, formatLocalDate, formatLocalTime, sortTravelItems } from "../travel/format";
+import { eventTypeClass, eventTypeLabels, formatLocalDate, formatLocalTime, sortTravelItems } from "../travel/format";
 import type { TravelItem } from "../travel/types";
 
 function itemLocationSummary(item: TravelItem): string | null {
@@ -23,15 +23,21 @@ function TravelItemCard({ item, onOpen }: { item: TravelItem; onOpen: () => void
     <li>
       <article className="timeline-card">
         <div className="timeline-card-content">
-          <p className="eyebrow">{eventTypeLabels[item.eventTypeCode]}</p>
+          <div className="timeline-card-meta">
+            <span className={eventTypeClass(item.eventTypeCode)}>{eventTypeLabels[item.eventTypeCode]}</span>
+            {item.bookingStatus === "cancelled" ? (
+              <span className="status-pill status-pill--cancelled">Storniert</span>
+            ) : null}
+          </div>
           <h3>{item.title}</h3>
           <p className="timeline-time">{formatLocalTime(item.startTime)}</p>
           {location ? <p className="timeline-location">{location}</p> : null}
-          {item.bookingStatus === "cancelled" ? <p className="status-text">Storniert</p> : null}
         </div>
-        <button className="secondary-button" type="button" onClick={onOpen} aria-label={`${item.title} öffnen`}>
-          Details
-        </button>
+        <div className="timeline-card-action">
+          <button className="secondary-button" type="button" onClick={onOpen} aria-label={`${item.title} öffnen`}>
+            Details
+          </button>
+        </div>
       </article>
     </li>
   );
@@ -64,9 +70,12 @@ export function TripOverviewPage() {
           <p className="eyebrow">Gemeinsame Reise</p>
           <h1 id="trip-overview-title">{tripState.trip.title}</h1>
           <p className="trip-dates">{formatTripDateRange(tripState.trip.startDate, tripState.trip.endDate)}</p>
+          <p className="sync-status" role="status" aria-live="polite">
+            {isRefreshing ? "Timeline wird aktualisiert …" : connectionMessage}
+          </p>
         </div>
         <div className="overview-actions">
-          <button className="secondary-button" type="button" onClick={() => navigate("/events/new")}>
+          <button className="primary-button" type="button" onClick={() => navigate("/events/new")}>
             Ereignis manuell anlegen
           </button>
           <button className="secondary-button" type="button" onClick={() => navigate("/trip")}>
@@ -74,20 +83,31 @@ export function TripOverviewPage() {
           </button>
         </div>
       </section>
-      <p className="sync-status" role="status" aria-live="polite">
-        {isRefreshing ? "Timeline wird aktualisiert …" : connectionMessage}
-      </p>
-      {itemState.message ? <div className="error-summary" role="alert"><p>{itemState.message}</p></div> : null}
+      {itemState.message ? (
+        <div className="error-summary stack-gap" role="alert">
+          <p>{itemState.message}</p>
+        </div>
+      ) : null}
       {itemState.status === "loading" ? (
-        <section className="state-card timeline-placeholder" aria-live="polite"><p>Timeline wird geladen …</p></section>
+        <section className="state-card timeline-placeholder" aria-live="polite">
+          <p>Timeline wird geladen …</p>
+        </section>
       ) : itemState.items.length === 0 ? (
         <section className="state-card timeline-placeholder" aria-labelledby="timeline-placeholder-title">
           <p className="eyebrow">Timeline</p>
           <h2 id="timeline-placeholder-title">Noch keine Ereignisse</h2>
-          <p>Erfassen Sie fehlende Reisebestandteile manuell. Bestätigte Ereignisse erscheinen hier nach Serverbestätigung.</p>
-          <button className="primary-button state-action" type="button" onClick={() => navigate("/events/new")}>
-            Erstes Ereignis anlegen
-          </button>
+          <p className="muted stack-gap-sm">
+            Erfassen Sie fehlende Reisebestandteile manuell oder laden Sie Buchungsdokumente hoch. Bestätigte
+            Ereignisse erscheinen hier nach Serverbestätigung.
+          </p>
+          <div className="overview-actions stack-gap">
+            <button className="primary-button state-action" type="button" onClick={() => navigate("/events/new")}>
+              Erstes Ereignis anlegen
+            </button>
+            <button className="secondary-button" type="button" onClick={() => navigate("/documents")}>
+              Dokument hochladen
+            </button>
+          </div>
         </section>
       ) : (
         <section className="timeline" aria-labelledby="timeline-title">
@@ -96,13 +116,17 @@ export function TripOverviewPage() {
               <p className="eyebrow">Timeline</p>
               <h2 id="timeline-title">Bestätigte Reiseereignisse</h2>
             </div>
-            <p className="timeline-count">{itemState.items.length} von 30</p>
+            <p className="timeline-count">
+              {itemState.items.length} von 30
+            </p>
           </div>
           {sortedGroups.map(([localDate, items]) => (
             <section className="timeline-day" key={localDate} aria-labelledby={`timeline-day-${localDate}`}>
               <h3 id={`timeline-day-${localDate}`}>{formatLocalDate(localDate)}</h3>
               <ol>
-                {items.map((item) => <TravelItemCard key={item.id} item={item} onOpen={() => navigate(`/events/${item.id}`)} />)}
+                {items.map((item) => (
+                  <TravelItemCard key={item.id} item={item} onOpen={() => navigate(`/events/${item.id}`)} />
+                ))}
               </ol>
             </section>
           ))}

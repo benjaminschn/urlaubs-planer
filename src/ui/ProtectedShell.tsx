@@ -32,41 +32,25 @@ export function ProtectedShell() {
   }
 
   const isHome = route.path === "/app" || route.path === "/timeline";
+  const isDocuments = route.path === "/documents";
   const travelItemRoute = travelItemRouteFromPath(route.path);
   const candidateRoute = candidateRouteFromPath(route.path);
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
         Zum Inhalt springen
       </a>
       <header className="app-header">
-        <div>
+        <div className="app-header-brand">
           <p className="eyebrow">Gemeinsamer Reiseplaner</p>
           <p className="app-title">{tripState.trip.title}</p>
           <p className="app-subtitle">{formatTripDateRange(tripState.trip.startDate, tripState.trip.endDate)}</p>
         </div>
         <button className="secondary-button" type="button" onClick={handleSignOut} disabled={isSigningOut}>
-          {isSigningOut ? "Abmeldung läuft …" : "Abmelden"}
+          {isSigningOut ? "Abmeldung …" : "Abmelden"}
         </button>
       </header>
-      <nav className="app-nav" aria-label="Bereichsnavigation">
-        <button
-          className={isHome ? "nav-link active" : "nav-link"}
-          type="button"
-          onClick={() => navigate("/app")}
-          aria-current={isHome ? "page" : undefined}
-        >
-          Timeline
-        </button>
-        <button
-          className={route.path === "/documents" ? "nav-link active" : "nav-link"}
-          type="button"
-          onClick={() => navigate("/documents")}
-          aria-current={route.path === "/documents" ? "page" : undefined}
-        >
-          Dokumente
-        </button>
-      </nav>
       {realtimeStatus === "disconnected" ? (
         <p className="connection-banner" role="status" aria-live="polite">
           Verbindung wird wiederhergestellt. Änderungen werden nach Serverbestätigung angezeigt.
@@ -80,6 +64,30 @@ export function ProtectedShell() {
         {route.path === "/documents" ? <DocumentsPage /> : null}
         {candidateRoute ? <CandidateReviewPage /> : null}
       </main>
+      <nav className="app-nav" aria-label="Bereichsnavigation">
+        <button
+          className={isHome ? "nav-link active" : "nav-link"}
+          type="button"
+          onClick={() => navigate("/app")}
+          aria-current={isHome ? "page" : undefined}
+        >
+          <span className="nav-link-icon" aria-hidden="true">
+            ▤
+          </span>
+          Timeline
+        </button>
+        <button
+          className={isDocuments ? "nav-link active" : "nav-link"}
+          type="button"
+          onClick={() => navigate("/documents")}
+          aria-current={isDocuments ? "page" : undefined}
+        >
+          <span className="nav-link-icon" aria-hidden="true">
+            ☰
+          </span>
+          Dokumente
+        </button>
+      </nav>
     </div>
   );
 }

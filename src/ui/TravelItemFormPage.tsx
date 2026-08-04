@@ -831,9 +831,11 @@ export function TravelItemFormPage() {
           <InputField id="travel-item-notes" label="Freie Notizen" multiline value={draft.notes} onChange={(next) => updateDraftField("notes", next)} />
           <InputField id="travel-item-attributes" label="Zusätzliche Anbieterangaben (label=value|Einheit, eine pro Zeile)" multiline value={draft.additionalAttributes} onChange={(next) => updateDraftField("additionalAttributes", next)} />
         </details>
-        <button ref={firstErrorRef} className="primary-button" type="submit" disabled={isSaving} aria-busy={isSaving}>
-          {isSaving ? "Ereignis wird gespeichert …" : isEdit ? "Änderungen speichern" : "Ereignis speichern"}
-        </button>
+        <div className="form-actions">
+          <button ref={firstErrorRef} className="primary-button" type="submit" disabled={isSaving} aria-busy={isSaving}>
+            {isSaving ? "Ereignis wird gespeichert …" : isEdit ? "Änderungen speichern" : "Ereignis speichern"}
+          </button>
+        </div>
       </form>
     </section>
   );

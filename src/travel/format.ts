@@ -8,6 +8,10 @@ export const eventTypeLabels: Record<EventTypeCode, string> = {
   activity: "Aktivität"
 };
 
+export function eventTypeClass(code: EventTypeCode): string {
+  return `event-type event-type--${code}`;
+}
+
 export function formatLocalDate(value: string): string {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return value;

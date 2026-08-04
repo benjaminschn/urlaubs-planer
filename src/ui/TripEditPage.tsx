@@ -188,9 +188,11 @@ export function TripEditPage() {
           />
           {errors.endDate ? <p id="endDate-error" className="field-error">{errors.endDate}</p> : null}
         </div>
-        <button className="primary-button" type="submit" disabled={isSaving} aria-busy={isSaving}>
-          {isSaving ? "Reise wird gespeichert …" : "Änderungen speichern"}
-        </button>
+        <div className="form-actions">
+          <button className="primary-button" type="submit" disabled={isSaving} aria-busy={isSaving}>
+            {isSaving ? "Reise wird gespeichert …" : "Änderungen speichern"}
+          </button>
+        </div>
       </form>
     </section>
   );
