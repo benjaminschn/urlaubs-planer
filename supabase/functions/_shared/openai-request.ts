@@ -23,6 +23,32 @@ export function safeOpenAIErrorCode(body: unknown): string | null {
   return value && /^[a-z0-9_]{1,60}$/.test(value) ? value : null;
 }
 
+export function safeOpenAIInvalidSchemaReason(body: unknown): string | null {
+  if (safeOpenAIErrorCode(body) !== "invalid_json_schema") return null;
+  const error = body && typeof body === "object" && !Array.isArray(body)
+    ? (body as Record<string, unknown>).error
+    : null;
+  const message = error && typeof error === "object" && !Array.isArray(error)
+    ? (error as Record<string, unknown>).message
+    : null;
+  if (typeof message !== "string") return null;
+
+  const classifiers: Array<[RegExp, string]> = [
+    [/too many (?:object )?properties|exceeds?.*propert(?:y|ies).*limit/i, "schema_property_limit"],
+    [/nesting depth|too many levels|exceeds?.*depth/i, "schema_depth_limit"],
+    [/total string|string.*(?:size|length).*limit/i, "schema_string_limit"],
+    [/too many enum|enum.*(?:size|length).*limit/i, "schema_enum_limit"],
+    [/additionalProperties/i, "schema_additional_properties"],
+    [/(?:missing|required).*['"]required['"]|['"]required['"].*(?:missing|required)/i, "schema_required_fields"],
+    [/(?:unsupported|not permitted|not supported).*keyword|keyword.*(?:unsupported|not permitted|not supported)/i, "schema_unsupported_keyword"],
+    [/array schema.*items|items.*(?:missing|required)/i, "schema_array_items"],
+    [/invalid.*\$ref|reference.*(?:invalid|unresolved)|unresolved.*reference/i, "schema_reference"],
+    [/root.*(?:object|anyOf)|(?:object|anyOf).*root/i, "schema_root"],
+    [/invalid.*type|type.*(?:invalid|unsupported|not permitted)/i, "schema_type"]
+  ];
+  return classifiers.find(([pattern]) => pattern.test(message))?.[1] ?? "schema_invalid_unclassified";
+}
+
 export function buildOpenAIResponseBody(options: {
   model: string;
   maxOutputTokens: number;

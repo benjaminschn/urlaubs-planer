@@ -3,7 +3,8 @@ import {
   buildOpenAIResponseBody,
   openAIFilePurpose,
   openAIInputKind,
-  safeOpenAIErrorCode
+  safeOpenAIErrorCode,
+  safeOpenAIInvalidSchemaReason
 } from "../../supabase/functions/_shared/openai-request";
 
 describe("OpenAI document input adapter", () => {
@@ -64,5 +65,29 @@ describe("OpenAI document input adapter", () => {
     })).toBe("invalid_json_schema");
     expect(safeOpenAIErrorCode({ error: { code: "unsafe-code/with-details" } })).toBeNull();
     expect(safeOpenAIErrorCode({ error: { type: "invalid_request_error" } })).toBe("invalid_request_error");
+  });
+
+  it("classifies invalid schema messages without retaining their text", () => {
+    expect(safeOpenAIInvalidSchemaReason({
+      error: {
+        code: "invalid_json_schema",
+        message: "Invalid schema: too many object properties in a sensitive.path"
+      }
+    })).toBe("schema_property_limit");
+    expect(safeOpenAIInvalidSchemaReason({
+      error: {
+        code: "invalid_json_schema",
+        message: "Invalid schema: additionalProperties must be false at a sensitive.path"
+      }
+    })).toBe("schema_additional_properties");
+    expect(safeOpenAIInvalidSchemaReason({
+      error: {
+        code: "invalid_json_schema",
+        message: "Sensitive compiler text that matches no approved classifier"
+      }
+    })).toBe("schema_invalid_unclassified");
+    expect(safeOpenAIInvalidSchemaReason({
+      error: { code: "invalid_request_error", message: "too many object properties" }
+    })).toBeNull();
   });
 });

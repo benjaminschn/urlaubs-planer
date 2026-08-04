@@ -2,7 +2,7 @@ import Ajv from "https://esm.sh/ajv@8.17.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.111.0";
 import extractionSchema from "../../../schemas/extraction.schema.json" with { type: "json" };
 import { validateAndAdapt } from "../_shared/extraction-semantics.ts";
-import { buildOpenAIResponseBody, openAIFilePurpose, safeOpenAIErrorCode } from "../_shared/openai-request.ts";
+import { buildOpenAIResponseBody, openAIFilePurpose, safeOpenAIErrorCode, safeOpenAIInvalidSchemaReason } from "../_shared/openai-request.ts";
 
 const bucket = "travel-documents";
 const schemaVersion = "1.0.0";
@@ -64,7 +64,8 @@ function providerHttpError(stage: "file_upload" | "response", status: number, pr
   const retryable = status === 408 || status === 429 || status >= 500;
   const code = retryable ? "provider_unavailable" : "provider_rejected";
   const providerCode = safeOpenAIErrorCode(providerBody);
-  return { kind: "error", ...safeError(code, retryable, `${code}_${stage}_${status}${providerCode ? `_${providerCode}` : ""}`) };
+  const schemaReason = safeOpenAIInvalidSchemaReason(providerBody);
+  return { kind: "error", ...safeError(code, retryable, `${code}_${stage}_${status}${providerCode ? `_${providerCode}` : ""}${schemaReason ? `_${schemaReason}` : ""}`) };
 }
 
 async function providerErrorBody(response: Response): Promise<unknown> {
