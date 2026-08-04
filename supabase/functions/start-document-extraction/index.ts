@@ -65,7 +65,10 @@ function providerHttpError(stage: "file_upload" | "response", status: number, pr
   const code = retryable ? "provider_unavailable" : "provider_rejected";
   const providerCode = safeOpenAIErrorCode(providerBody);
   const schemaReason = safeOpenAIInvalidSchemaReason(providerBody);
-  return { kind: "error", ...safeError(code, retryable, `${code}_${stage}_${status}${providerCode ? `_${providerCode}` : ""}${schemaReason ? `_${schemaReason}` : ""}`) };
+  const runErrorCode = providerCode === "invalid_json_schema" && schemaReason
+    ? `provider_schema_${schemaReason}`
+    : `${code}_${stage}_${status}${providerCode ? `_${providerCode}` : ""}`;
+  return { kind: "error", ...safeError(code, retryable, runErrorCode) };
 }
 
 async function providerErrorBody(response: Response): Promise<unknown> {

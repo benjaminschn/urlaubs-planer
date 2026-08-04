@@ -83,9 +83,9 @@ describe("OpenAI document input adapter", () => {
     expect(safeOpenAIInvalidSchemaReason({
       error: {
         code: "invalid_json_schema",
-        message: "Sensitive compiler text that matches no approved classifier"
+        message: "Invalid schema for response_format 'secret_field': In context=('secret_path'), '$defs' is not permitted. sensitive compiler text"
       }
-    })).toBe("schema_invalid_unclassified");
+    })).toBe("schema_shape_defs_is_permitted");
     expect(safeOpenAIInvalidSchemaReason({
       error: { code: "invalid_request_error", message: "too many object properties" }
     })).toBeNull();

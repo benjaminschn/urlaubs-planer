@@ -46,7 +46,22 @@ export function safeOpenAIInvalidSchemaReason(body: unknown): string | null {
     [/root.*(?:object|anyOf)|(?:object|anyOf).*root/i, "schema_root"],
     [/invalid.*type|type.*(?:invalid|unsupported|not permitted)/i, "schema_type"]
   ];
-  return classifiers.find(([pattern]) => pattern.test(message))?.[1] ?? "schema_invalid_unclassified";
+  const classified = classifiers.find(([pattern]) => pattern.test(message))?.[1];
+  if (classified) return classified;
+
+  const safeWords = new Set([
+    "properties", "items", "type", "object", "array", "string", "number",
+    "integer", "boolean", "null", "anyof", "ref", "defs", "enum", "required",
+    "additionalproperties", "must", "be", "is", "are", "missing", "provided",
+    "supplied", "false", "true", "unsupported", "supported", "keyword",
+    "permitted", "expected", "limit", "maximum", "minimum", "exceeds", "too",
+    "many", "depth", "levels", "length", "size", "title", "description"
+  ]);
+  const shape = (message.toLowerCase().match(/[a-z]+/g) ?? [])
+    .filter((word, index, words) => safeWords.has(word) && word !== words[index - 1])
+    .slice(0, 20)
+    .join("_");
+  return shape ? `schema_shape_${shape}` : "schema_invalid_unclassified";
 }
 
 export function buildOpenAIResponseBody(options: {
