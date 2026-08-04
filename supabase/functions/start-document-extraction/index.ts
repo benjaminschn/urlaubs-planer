@@ -2,7 +2,7 @@ import Ajv from "https://esm.sh/ajv@8.17.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.111.0";
 import extractionSchema from "../../../schemas/extraction.schema.json" with { type: "json" };
 import { validateAndAdapt } from "../_shared/extraction-semantics.ts";
-import { buildOpenAIResponseBody, openAIFilePurpose, safeOpenAIErrorCode, safeOpenAIInvalidSchemaReason } from "../_shared/openai-request.ts";
+import { buildOpenAIResponseBody, extractOpenAIStructuredText, openAIFilePurpose, safeOpenAIErrorCode, safeOpenAIInvalidSchemaReason } from "../_shared/openai-request.ts";
 
 const bucket = "travel-documents";
 const schemaVersion = "1.0.0";
@@ -88,18 +88,6 @@ function decodeJwtPayload(token: string): RecordLike | null {
   } catch {
     return null;
   }
-}
-
-function extractStructuredText(body: unknown): { text: string; requestId: string | null; usage: RecordLike | null } | null {
-  const response = asRecord(body);
-  const output = response && Array.isArray(response.output) ? response.output : null;
-  if (!output || output.length !== 1) return null;
-  const message = asRecord(output[0]);
-  const content = message && Array.isArray(message.content) ? message.content : null;
-  if (message?.type !== "message" || !content || content.length !== 1) return null;
-  const part = asRecord(content[0]);
-  if (part?.type !== "output_text" || typeof part.text !== "string") return null;
-  return { text: part.text, requestId: typeof response.id === "string" ? response.id : null, usage: asRecord(response.usage) };
 }
 
 function actualCostMicroEur(usage: RecordLike | null): number {
@@ -225,7 +213,7 @@ Deno.serve(async (request) => {
       await serviceClient.rpc("fail_extraction_run", { p_run_id: asRecord(claimedRun)?.id, p_requested_by_user_id: userData.user.id, p_lease_owner: leaseOwner, p_error_code: providerResult.runErrorCode, p_retryable: providerResult.retryable, p_provider_attempt_count: attempts });
       return response({ code: providerResult.code }, 422, headers);
     }
-    const structured = extractStructuredText(providerResult.body);
+    const structured = extractOpenAIStructuredText(providerResult.body);
     if (!structured) {
       await serviceClient.rpc("fail_extraction_run", { p_run_id: asRecord(claimedRun)?.id, p_requested_by_user_id: userData.user.id, p_lease_owner: leaseOwner, p_error_code: "invalid_structured_output", p_retryable: false, p_provider_attempt_count: attempts });
       return response({ code: "invalid_structured_output" }, 422, headers);
@@ -241,8 +229,9 @@ Deno.serve(async (request) => {
     }
     const adapted = validateAndAdapt(parsed);
     if ("error" in adapted) {
+      // Persist granular diagnostic code; return a stable, already-localized frontend code.
       await serviceClient.rpc("fail_extraction_run", { p_run_id: asRecord(claimedRun)?.id, p_requested_by_user_id: userData.user.id, p_lease_owner: leaseOwner, p_error_code: adapted.error, p_retryable: false, p_provider_attempt_count: attempts });
-      return response({ code: adapted.error }, 422, headers);
+      return response({ code: "invalid_extraction_semantics" }, 422, headers);
     }
     const { data: completed, error: completeError } = await serviceClient.rpc("complete_extraction_run", {
       p_run_id: asRecord(claimedRun)?.id,

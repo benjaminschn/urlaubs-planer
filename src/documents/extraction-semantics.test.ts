@@ -55,14 +55,98 @@ describe("Extraktionssemantik", () => {
 
   it("lehnt ungültige Zeiten und geheime Werte vor jeder Persistenz ab", () => {
     const invalidTime = event(0, "flight");
-    invalidTime.start.precision = known("exact_time");
-    expect(validateAndAdapt({ result: "completed", events: [invalidTime], warnings: [] })).toEqual({ error: "invalid_extraction_semantics" });
+    invalidTime.start.local_date = known("not-a-date");
+    expect(validateAndAdapt({ result: "completed", events: [invalidTime], warnings: [] })).toEqual({ error: "semantics_time" });
 
     const secret = { ...event(0, "flight"), booking_reference: known("4111 1111 1111 1111") };
-    expect(validateAndAdapt({ result: "completed", events: [secret], warnings: [] })).toEqual({ error: "invalid_extraction_semantics" });
+    expect(validateAndAdapt({ result: "completed", events: [secret], warnings: [] })).toEqual({ error: "semantics_secret" });
+  });
+
+  it("erlaubt realistische Hotelzeiten inklusive unvollständiger oder fehlmarkierter Zeitfelder", () => {
+    const hotel = event(0, "accommodation", "Testhotel Berlin");
+    hotel.start = {
+      local_date: known("2026-08-15"),
+      local_time: known("15:00"),
+      precision: known("date_only"), // model mislabel
+      iana_time_zone: known(""),
+      utc_offset: known(""),
+      instant_utc: unknown(),
+      resolution_status: known("resolved") // incomplete but still reviewable
+    };
+    hotel.end = {
+      local_date: known("2026-08-17"),
+      local_time: known("11:00:00"),
+      precision: known("exact_time"),
+      iana_time_zone: known("Europe/Berlin"),
+      utc_offset: known("+02:00"),
+      instant_utc: known("2026-08-17T09:00:00+00:00"),
+      resolution_status: known("unresolved")
+    };
+    hotel.cancellation_deadline = {
+      local_date: unknown(),
+      local_time: unknown(),
+      precision: unknown(),
+      iana_time_zone: unknown(),
+      utc_offset: unknown(),
+      instant_utc: unknown(),
+      resolution_status: unknown()
+    };
+
+    const result = validateAndAdapt({ result: "completed", events: [hotel], warnings: [] });
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].proposed_event_type_code).toBe("accommodation");
+    expect(result.candidates[0].fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field_path: "title", original_value: "Testhotel Berlin" }),
+      expect.objectContaining({ field_path: "start.local_date", original_value: "2026-08-15" }),
+      expect.objectContaining({ field_path: "start.local_time", original_value: "15:00" })
+    ]));
   });
 
   it("bewahrt den Nullfall ohne Kandidaten", () => {
     expect(validateAndAdapt({ result: "no_relevant_events", events: [], warnings: [] })).toEqual({ candidates: [], warnings: [] });
+  });
+
+  it("normalisiert unvollständige Feldhüllen statt den gesamten Lauf zu verwerfen", () => {
+    const hotel = event(0, "accommodation", "Testhotel Berlin");
+    // explicit without evidence / confidence — common model drift
+    hotel.title = { value: "Testhotel Berlin", provenance: "explicit", confidence: null, evidence: [] };
+    // blank string marked explicit → unknown
+    hotel.notes = { value: "   ", provenance: "explicit", confidence: 0.4, evidence: [] };
+    // value present but provenance unknown → inferred
+    hotel.provider_name = { value: "Booking Test", provenance: "unknown", confidence: null, evidence: [] };
+
+    const result = validateAndAdapt({ result: "completed", events: [hotel], warnings: [] });
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.candidates[0].fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field_path: "title", original_value: "Testhotel Berlin", provenance: "explicit", confidence: null }),
+      expect.objectContaining({ field_path: "notes", original_value: null, provenance: "unknown", confidence: null }),
+      expect.objectContaining({ field_path: "provider_name", original_value: "Booking Test", provenance: "inferred" })
+    ]));
+  });
+
+  it("normalisiert 1-basierte event_index-Werte in stabile Kandidatenreihenfolge", () => {
+    const first = event(1, "accommodation", "Hotel A");
+    const second = event(2, "flight", "Flug B");
+    const result = validateAndAdapt({
+      result: "partial",
+      events: [second, first],
+      warnings: [{ code: "ambiguous_information", severity: "review", event_index: 1, field_path: null, message: "Bitte prüfen", evidence: [] }]
+    });
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.candidates.map((candidate) => ({
+      index: candidate.candidate_index,
+      type: candidate.proposed_event_type_code,
+      title: candidate.fields.find((field) => field.field_path === "title")?.original_value
+    }))).toEqual([
+      { index: 0, type: "accommodation", title: "Hotel A" },
+      { index: 1, type: "flight", title: "Flug B" }
+    ]);
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "ambiguous_information", event_index: 0 })
+    ]));
   });
 });

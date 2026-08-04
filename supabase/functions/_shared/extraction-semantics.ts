@@ -34,9 +34,15 @@ function asRecord(value: unknown): RecordLike | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as RecordLike : null;
 }
 
-function isField(value: unknown): value is RecordLike & { provenance: string; confidence: unknown; evidence: unknown[]; value: unknown } {
+function isField(value: unknown): value is RecordLike & { provenance: string; confidence: unknown; evidence: unknown; value: unknown } {
   const row = asRecord(value);
-  return Boolean(row && "value" in row && "provenance" in row && "confidence" in row && Array.isArray(row.evidence));
+  if (!row || !("value" in row) || !("provenance" in row) || !("confidence" in row) || !("evidence" in row)) return false;
+  // Composite items reuse the same four keys but are not leaf field envelopes.
+  if ("kind" in row || "label" in row || ("role" in row && ("phone" in row || "email" in row || "website" in row))) {
+    return false;
+  }
+  const provenance = row.provenance;
+  return provenance === "explicit" || provenance === "inferred" || provenance === "unknown";
 }
 
 function hasForbiddenSecret(value: unknown): boolean {
@@ -54,58 +60,167 @@ function fieldValue(parent: RecordLike | null, key: string): unknown {
   return field?.value;
 }
 
+/** Treat blank strings as null so model-emitted "" does not fail format checks. */
+function normalizedScalar(value: unknown): unknown {
+  if (typeof value !== "string") return value ?? null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function isValidLocalDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isValidLocalTime(value: string): boolean {
+  // HH:mm, HH:mm:ss, optional fractional seconds
+  return /^\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/.test(value);
+}
+
+function isValidIanaZone(value: string): boolean {
+  if (value === "UTC" || value === "Etc/UTC" || value === "Etc/GMT") return true;
+  return /^[A-Za-z]+(?:[_+-][A-Za-z0-9]+)*\/[A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)*$/.test(value);
+}
+
+function isValidUtcOffset(value: string): boolean {
+  // +HH:MM, -HH:MM, +HHMM, Z
+  return value === "Z" || value === "z" || /^[+-](?:0\d|1\d|2[0-3])(?::?[0-5]\d)$/.test(value);
+}
+
+function isValidInstant(value: string): boolean {
+  // Accept Z and numeric-offset RFC3339 forms; models rarely emit only Z.
+  if (Number.isNaN(Date.parse(value))) return false;
+  return (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
+  );
+}
+
 function validateTime(time: unknown): boolean {
   const row = asRecord(time);
   if (!row) return false;
-  const date = fieldValue(row, "local_date");
-  const localTime = fieldValue(row, "local_time");
-  const precision = fieldValue(row, "precision");
-  const zone = fieldValue(row, "iana_time_zone");
-  const offset = fieldValue(row, "utc_offset");
-  const instant = fieldValue(row, "instant_utc");
-  const resolution = fieldValue(row, "resolution_status");
-  if (date !== null && (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))) return false;
-  if (localTime !== null && (typeof localTime !== "string" || !/^\d{2}:\d{2}(?::\d{2})?$/.test(localTime))) return false;
-  if (zone !== null && (typeof zone !== "string" || !/^[A-Za-z]+(?:[_+-][A-Za-z]+)*\/[A-Za-z_+-]+(?:\/[A-Za-z_+-]+)*$/.test(zone))) return false;
-  if (offset !== null && (typeof offset !== "string" || !/^[+-](?:0\d|1\d|2[0-3]):[0-5]\d$/.test(offset))) return false;
-  if (instant !== null && (typeof instant !== "string" || Number.isNaN(Date.parse(instant)) || !instant.endsWith("Z"))) return false;
-  if (precision === "exact_time") return typeof date === "string" && typeof localTime === "string" && typeof zone === "string" && typeof offset === "string" && typeof instant === "string" && resolution === "resolved";
-  if (precision === "date_only" || precision === "unknown_time") return typeof date === "string" && localTime === null && instant === null;
-  return precision === null && date === null && localTime === null && zone === null && offset === null && instant === null;
-}
+  const date = normalizedScalar(fieldValue(row, "local_date"));
+  const localTime = normalizedScalar(fieldValue(row, "local_time"));
+  const precision = normalizedScalar(fieldValue(row, "precision"));
+  const zone = normalizedScalar(fieldValue(row, "iana_time_zone"));
+  const offset = normalizedScalar(fieldValue(row, "utc_offset"));
+  const instant = normalizedScalar(fieldValue(row, "instant_utc"));
+  const resolution = normalizedScalar(fieldValue(row, "resolution_status"));
 
-function validateField(field: RecordLike): boolean {
-  const value = field.value;
-  const provenance = field.provenance;
-  const confidence = field.confidence;
-  const evidence = field.evidence;
-  if (provenance === "unknown") return value === null && confidence === null && Array.isArray(evidence) && evidence.length === 0;
-  return (provenance === "explicit" || provenance === "inferred")
-    && value !== null
-    && typeof confidence === "number"
-    && Number.isFinite(confidence)
-    && confidence >= 0
-    && confidence <= 1
-    && Array.isArray(evidence)
-    && evidence.length > 0;
-}
-
-function collectFields(value: unknown, path: string, occurrenceKey: string, output: CandidateField[]): boolean {
-  if (isField(value)) {
-    if (!validateField(value)) return false;
-    output.push({
-      field_path: path,
-      occurrence_key: occurrenceKey,
-      original_value: value.value,
-      provenance: value.provenance as CandidateField["provenance"],
-      confidence: typeof value.confidence === "number" ? value.confidence : null,
-      source_locator: value.evidence
-    });
-    return !hasForbiddenSecret(value.value);
+  if (date !== null && (typeof date !== "string" || !isValidLocalDate(date))) return false;
+  if (localTime !== null && (typeof localTime !== "string" || !isValidLocalTime(localTime))) return false;
+  if (zone !== null && (typeof zone !== "string" || !isValidIanaZone(zone))) return false;
+  if (offset !== null && (typeof offset !== "string" || !isValidUtcOffset(offset))) return false;
+  if (instant !== null && (typeof instant !== "string" || !isValidInstant(instant))) return false;
+  if (
+    resolution !== null
+    && (typeof resolution !== "string"
+      || !["resolved", "date_only", "ambiguous", "nonexistent", "unresolved"].includes(resolution))
+  ) {
+    return false;
   }
-  if (Array.isArray(value)) return value.every((item, index) => collectFields(item, path, occurrenceKey ? `${occurrenceKey}.${index}` : `${path}:${index}`, output));
+
+  // Fully unknown / empty time block is valid.
+  if (
+    date === null
+    && localTime === null
+    && (precision === null || precision === "unknown_time")
+    && zone === null
+    && offset === null
+    && instant === null
+  ) {
+    return true;
+  }
+
+  // Any concrete time component requires a local date (contract).
+  if (typeof date !== "string") return false;
+
+  // Date + local time: accept even if the model mislabeled precision as date_only.
+  // Incomplete zone/offset/instant is allowed; "resolved" without a full set is tolerated
+  // (stored values stay as-is for human review — we do not invent missing components).
+  if (typeof localTime === "string") return true;
+
+  // Date without clock time: allow optional zone; drop the hard ban on stray instants
+  // only when precision claims pure date — a lone instant without local time is still rejected.
+  if (instant !== null) return false;
+  return precision === null
+    || precision === "date_only"
+    || precision === "unknown_time"
+    || precision === "exact_time";
+}
+
+/**
+ * Coerce slightly imperfect field envelopes into a storable candidate field.
+ * Hard-reject only impossible provenance values; normalize common model drift
+ * (empty evidence, null confidence, blank strings, unknown/value mismatches).
+ */
+function adaptField(
+  field: RecordLike,
+  path: string,
+  occurrenceKey: string
+): CandidateField | "semantics_field" | "semantics_secret" {
+  if (hasForbiddenSecret(field.value)) return "semantics_secret";
+
+  let provenance = field.provenance;
+  if (provenance !== "explicit" && provenance !== "inferred" && provenance !== "unknown") {
+    return "semantics_field";
+  }
+
+  let value: unknown = field.value;
+  if (typeof value === "string" && value.trim() === "") value = null;
+
+  let confidence: number | null = null;
+  if (typeof field.confidence === "number" && Number.isFinite(field.confidence)) {
+    confidence = Math.min(1, Math.max(0, field.confidence));
+  } else if (typeof field.confidence === "string" && field.confidence.trim() !== "") {
+    const parsed = Number(field.confidence);
+    if (Number.isFinite(parsed)) confidence = Math.min(1, Math.max(0, parsed));
+  }
+
+  const evidence = Array.isArray(field.evidence) ? field.evidence : [];
+
+  if (value === null || value === undefined) {
+    provenance = "unknown";
+    confidence = null;
+    value = null;
+  } else if (provenance === "unknown") {
+    // Model supplied a value but marked unknown — keep value for human review.
+    provenance = "inferred";
+  }
+
+  return {
+    field_path: path,
+    occurrence_key: occurrenceKey,
+    original_value: value,
+    provenance: provenance as CandidateField["provenance"],
+    confidence: provenance === "unknown" ? null : confidence,
+    source_locator: provenance === "unknown" ? [] : evidence
+  };
+}
+
+type FieldCollectResult = "ok" | "semantics_field" | "semantics_secret";
+
+function collectFields(value: unknown, path: string, occurrenceKey: string, output: CandidateField[]): FieldCollectResult {
+  if (isField(value)) {
+    const adapted = adaptField(value, path, occurrenceKey);
+    if (adapted === "semantics_field" || adapted === "semantics_secret") return adapted;
+    output.push(adapted);
+    return "ok";
+  }
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const result = collectFields(item, path, occurrenceKey ? `${occurrenceKey}.${index}` : `${path}:${index}`, output);
+      if (result !== "ok") return result;
+    }
+    return "ok";
+  }
   const row = asRecord(value);
-  return row ? Object.entries(row).every(([key, item]) => collectFields(item, path ? `${path}.${key}` : key, occurrenceKey, output)) : !hasForbiddenSecret(value);
+  if (!row) return hasForbiddenSecret(value) ? "semantics_secret" : "ok";
+  for (const [key, item] of Object.entries(row)) {
+    // Structural event index is not a leaf field envelope.
+    if (key === "event_index" && path === "") continue;
+    const result = collectFields(item, path ? `${path}.${key}` : key, occurrenceKey, output);
+    if (result !== "ok") return result;
+  }
+  return "ok";
 }
 
 function mappedType(event: RecordLike): CandidatePayload["proposed_event_type_code"] | null {
@@ -123,35 +238,96 @@ function mappedType(event: RecordLike): CandidatePayload["proposed_event_type_co
   return null;
 }
 
+function normalizeEventOrder(events: unknown[]): { ordered: Array<{ event: RecordLike; sourceIndex: number }> } | { error: string } {
+  const prepared: Array<{ event: RecordLike; sourceIndex: number; eventIndex: number }> = [];
+  for (const [sourceIndex, rawEvent] of events.entries()) {
+    const event = asRecord(rawEvent);
+    if (!event || typeof event.event_index !== "number" || !Number.isInteger(event.event_index) || event.event_index < 0) {
+      return { error: "semantics_event_index" };
+    }
+    prepared.push({ event, sourceIndex, eventIndex: event.event_index });
+  }
+  const unique = new Set(prepared.map((item) => item.eventIndex));
+  if (unique.size !== prepared.length) return { error: "semantics_event_index" };
+
+  // Models sometimes emit 1-based indices. Accept any unique non-negative set and
+  // re-canonicalize to 0..n-1 in ascending event_index order (stable by source order).
+  prepared.sort((left, right) => left.eventIndex - right.eventIndex || left.sourceIndex - right.sourceIndex);
+  return {
+    ordered: prepared.map((item) => ({ event: item.event, sourceIndex: item.sourceIndex }))
+  };
+}
+
 export function validateAndAdapt(raw: unknown): { candidates: CandidatePayload[]; warnings: WarningPayload[] } | { error: string } {
   const result = asRecord(raw);
   const events = Array.isArray(result?.events) ? result.events : [];
   const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
-  if ((result?.result === "completed" && events.length === 0) || (result?.result === "no_relevant_events" && events.length !== 0) || (result?.result === "partial" && warnings.length === 0)) return { error: "invalid_extraction_semantics" };
+  if (
+    (result?.result === "completed" && events.length === 0)
+    || (result?.result === "no_relevant_events" && events.length !== 0)
+    || (result?.result === "partial" && warnings.length === 0)
+  ) {
+    return { error: "semantics_result_shape" };
+  }
+
+  const normalized = normalizeEventOrder(events);
+  if ("error" in normalized) return normalized;
+
+  // Map original model event_index → canonical candidate index for warning rewrites.
+  const indexMap = new Map<number, number>();
+  for (const [candidateIndex, item] of normalized.ordered.entries()) {
+    indexMap.set(item.event.event_index as number, candidateIndex);
+  }
+
   const candidatePayloads: CandidatePayload[] = [];
   const warningPayloads: WarningPayload[] = [];
-  for (const [eventPosition, rawEvent] of events.entries()) {
-    const event = asRecord(rawEvent);
-    if (!event || typeof event.event_index !== "number" || event.event_index !== eventPosition) return { error: "invalid_extraction_semantics" };
-    if (!validateTime(event.start) || !validateTime(event.end) || !validateTime(event.cancellation_deadline)) return { error: "invalid_extraction_semantics" };
+  for (const [candidateIndex, { event }] of normalized.ordered.entries()) {
+    if (!validateTime(event.start) || !validateTime(event.end) || !validateTime(event.cancellation_deadline)) {
+      return { error: "semantics_time" };
+    }
     const type = mappedType(event);
     if (!type) {
-      warningPayloads.push({ code: "unsupported_event_kind", severity: "review", event_index: event.event_index, field_path: "details.generic.category", message: "Dieser Vorschlag konnte keiner unterstützten Ereignisart zugeordnet werden.", source_locator: [] });
+      warningPayloads.push({
+        code: "unsupported_event_kind",
+        severity: "review",
+        event_index: candidateIndex,
+        field_path: "details.generic.category",
+        message: "Dieser Vorschlag konnte keiner unterstützten Ereignisart zugeordnet werden.",
+        source_locator: []
+      });
       continue;
     }
     const fields: CandidateField[] = [];
-    if (!collectFields(event, "", "", fields)) return { error: "invalid_extraction_semantics" };
+    const fieldResult = collectFields(event, "", "", fields);
+    if (fieldResult !== "ok") return { error: fieldResult };
     const title = fields.find((field) => field.field_path === "title" && field.occurrence_key === "");
-    if (!title || typeof title.original_value !== "string" || !title.original_value.trim()) return { error: "invalid_extraction_semantics" };
-    candidatePayloads.push({ candidate_index: event.event_index, proposed_event_type_code: type, overall_confidence: null, fields });
+    if (!title || typeof title.original_value !== "string" || !title.original_value.trim()) {
+      return { error: "semantics_title" };
+    }
+    candidatePayloads.push({
+      candidate_index: candidateIndex,
+      proposed_event_type_code: type,
+      overall_confidence: null,
+      fields
+    });
   }
   for (const rawWarning of warnings) {
     const warning = asRecord(rawWarning);
-    if (!warning || typeof warning.code !== "string" || typeof warning.severity !== "string" || typeof warning.message !== "string" || !Array.isArray(warning.evidence)) return { error: "invalid_extraction_semantics" };
+    if (
+      !warning
+      || typeof warning.code !== "string"
+      || typeof warning.severity !== "string"
+      || typeof warning.message !== "string"
+      || !Array.isArray(warning.evidence)
+    ) {
+      return { error: "semantics_warning" };
+    }
+    const originalIndex = typeof warning.event_index === "number" ? warning.event_index : null;
+    const mappedIndex = originalIndex === null ? null : (indexMap.get(originalIndex) ?? null);
     warningPayloads.push({
       code: warning.code,
       severity: warning.severity,
-      event_index: typeof warning.event_index === "number" ? warning.event_index : null,
+      event_index: mappedIndex,
       field_path: typeof warning.field_path === "string" ? warning.field_path : null,
       message: warning.message,
       source_locator: warning.evidence

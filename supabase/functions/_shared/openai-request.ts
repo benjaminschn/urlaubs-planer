@@ -1,4 +1,5 @@
 export type OpenAIInputKind = "file" | "image";
+type RecordLike = Record<string, unknown>;
 
 const imageContentTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
@@ -55,13 +56,77 @@ export function safeOpenAIInvalidSchemaReason(body: unknown): string | null {
     "additionalproperties", "must", "be", "is", "are", "missing", "provided",
     "supplied", "false", "true", "unsupported", "supported", "keyword",
     "permitted", "expected", "limit", "maximum", "minimum", "exceeds", "too",
-    "many", "depth", "levels", "length", "size", "title", "description"
+    "many", "depth", "levels", "length", "size", "title", "description",
+    "minlength", "maxlength", "minitems", "maxitems", "pattern", "format",
+    "multipleof", "exclusiveminimum", "exclusivemaximum", "oneof", "allof",
+    "patternproperties", "minproperties", "maxproperties", "uniqueitems",
+    "dependentrequired", "dependentschemas", "const", "default", "examples",
+    "not", "allowed", "valid", "under", "any", "given", "schemas", "does",
+    "match", "one", "with", "without", "cannot", "can", "used", "when",
+    "value", "values", "should", "only", "at", "least", "exactly", "greater",
+    "less", "than", "equal", "zero", "positive", "negative", "long", "shorter",
+    "have", "has", "contain", "contains", "include", "includes", "exclusive",
+    "branch", "branches", "definition", "definitions", "reference", "references",
+    "recursive", "recursion", "sibling", "siblings", "constraint", "constraints",
+    "field", "fields", "key", "keys"
   ]);
   const shape = (message.toLowerCase().match(/[a-z]+/g) ?? [])
-    .filter((word, index, words) => safeWords.has(word) && word !== words[index - 1])
+    .filter((word, index, words) => safeWords.has(word) && word !== words[index - 1]
+      && !(word === "format" && words[index - 1] === "response"))
     .slice(0, 20)
     .join("_");
-  return shape ? `schema_shape_${shape}` : "schema_invalid_unclassified";
+  if (shape && shape !== "is" && shape !== "is_valid") return `schema_shape_${shape}`;
+
+  const withoutIdentifiers = message.replace(/(['"`])(?:\\.|(?!\1).)*\1/g, " ");
+  const firstSeparator = withoutIdentifiers.indexOf(":");
+  const finalClause = firstSeparator >= 0 ? withoutIdentifiers.slice(firstSeparator + 1) : withoutIdentifiers;
+  const ignoredWords = new Set(["invalid", "schema", "for", "response", "format", "in", "context"]);
+  const template = (finalClause.toLowerCase().match(/[a-z]+/g) ?? [])
+    .filter((word) => !ignoredWords.has(word))
+    .slice(0, 12)
+    .join("_");
+  return template ? `schema_template_${template}` : "schema_invalid_unclassified";
+}
+
+export function dereferenceJsonSchema(schema: unknown): unknown {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  const root = schema as Record<string, unknown>;
+  const definitions = root.$defs && typeof root.$defs === "object" && !Array.isArray(root.$defs)
+    ? root.$defs as Record<string, unknown>
+    : {};
+
+  const expand = (value: unknown, stack: Set<string>): unknown => {
+    if (!value || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value.map((item) => expand(item, stack));
+    const record = value as Record<string, unknown>;
+    if (typeof record.$ref === "string" && record.$ref.startsWith("#/$defs/")) {
+      const name = record.$ref.slice(8);
+      if (!(name in definitions) || stack.has(name)) throw new Error("Unsupported JSON Schema reference");
+      return expand(definitions[name], new Set([...stack, name]));
+    }
+    return Object.fromEntries(Object.entries(record)
+      .filter(([key]) => key !== "$defs")
+      .map(([key, child]) => [key, expand(child, stack)]));
+  };
+
+  return expand(root, new Set());
+}
+
+export function extractOpenAIStructuredText(body: unknown): { text: string; requestId: string | null; usage: RecordLike | null } | null {
+  const response = body && typeof body === "object" && !Array.isArray(body) ? body as RecordLike : null;
+  if (!response) return null;
+  const output = Array.isArray(response.output) ? response.output : null;
+  if (!output) return null;
+  const items = output.map((item) => item && typeof item === "object" && !Array.isArray(item) ? item as RecordLike : null);
+  if (items.some((item) => !item || item.type !== "reasoning" && item.type !== "message")) return null;
+  const messages = items.filter((item): item is RecordLike => item?.type === "message");
+  if (messages.length !== 1) return null;
+  const content = Array.isArray(messages[0].content) ? messages[0].content : null;
+  if (!content || content.length !== 1) return null;
+  const part = content[0] && typeof content[0] === "object" && !Array.isArray(content[0]) ? content[0] as RecordLike : null;
+  if (part?.type !== "output_text" || typeof part.text !== "string") return null;
+  const usage = response.usage && typeof response.usage === "object" && !Array.isArray(response.usage) ? response.usage as RecordLike : null;
+  return { text: part.text, requestId: typeof response.id === "string" ? response.id : null, usage };
 }
 
 export function buildOpenAIResponseBody(options: {
@@ -91,7 +156,7 @@ export function buildOpenAIResponseBody(options: {
         type: "json_schema",
         name: "travel_document_extraction",
         strict: true,
-        schema: options.schema
+        schema: dereferenceJsonSchema(options.schema)
       }
     }
   };

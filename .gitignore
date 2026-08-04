@@ -9,3 +9,6 @@ supabase/.branches/
 supabase/.temp/
 .DS_Store
 *.log
+
+# Local smoke fixtures and scratch (may contain private trial docs)
+tmp/

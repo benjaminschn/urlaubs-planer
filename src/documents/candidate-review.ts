@@ -22,21 +22,35 @@ function localTime(fields: ExtractionField[], prefix: "start" | "end"): JsonObje
   const localDate = stringValue(fields, `${prefix}.local_date`);
   if (!localDate) return null;
   const extractedPrecision = stringValue(fields, `${prefix}.precision`);
-  const precision = ["exact_time", "date_only", "unknown_time"].includes(extractedPrecision)
-    ? extractedPrecision
-    : "date_only";
   const localTimeValue = stringValue(fields, `${prefix}.local_time`) || null;
   const zone = stringValue(fields, `${prefix}.iana_time_zone`) || null;
+  const offset = offsetMinutes(stringValue(fields, `${prefix}.utc_offset`));
   const instant = stringValue(fields, `${prefix}.instant_utc`) || null;
-  const resolution = stringValue(fields, `${prefix}.resolution_status`) || precision;
+  const extractedResolution = stringValue(fields, `${prefix}.resolution_status`);
+
+  // Prefer keeping a printed local clock time. Full zone chain is optional until resolved.
+  if (localTimeValue && /^\d{2}:\d{2}(?::\d{2})?$/.test(localTimeValue)) {
+    const fullyResolved = Boolean(zone && offset !== null && instant && extractedResolution === "resolved");
+    return {
+      local_date: localDate,
+      local_time: localTimeValue,
+      precision: "exact_time",
+      iana_time_zone: zone,
+      utc_offset_minutes: offset,
+      instant_utc: instant,
+      resolution_status: fullyResolved ? "resolved" : (["unresolved", "ambiguous", "nonexistent"].includes(extractedResolution) ? extractedResolution : "unresolved")
+    };
+  }
+
+  const precision = extractedPrecision === "unknown_time" ? "unknown_time" : "date_only";
   return {
     local_date: localDate,
-    local_time: precision === "exact_time" ? localTimeValue : null,
+    local_time: null,
     precision,
-    iana_time_zone: zone,
-    utc_offset_minutes: precision === "exact_time" ? offsetMinutes(stringValue(fields, `${prefix}.utc_offset`)) : null,
-    instant_utc: precision === "exact_time" ? instant : null,
-    resolution_status: resolution
+    iana_time_zone: null,
+    utc_offset_minutes: null,
+    instant_utc: null,
+    resolution_status: precision
   };
 }
 

@@ -17,6 +17,13 @@ export const extractionErrorMessages: Record<string, string> = {
   budget_exhausted: "Das monatliche Verarbeitungsbudget ist erreicht.",
   invalid_structured_output: "Die Verarbeitung lieferte kein gültiges Ergebnis. Bitte versuchen Sie es später erneut.",
   invalid_extraction_semantics: "Die erkannten Angaben konnten nicht sicher übernommen werden.",
+  semantics_result_shape: "Die erkannten Angaben konnten nicht sicher übernommen werden.",
+  semantics_event_index: "Die erkannten Angaben konnten nicht sicher übernommen werden.",
+  semantics_time: "Die erkannten Angaben konnten nicht sicher übernommen werden.",
+  semantics_field: "Die erkannten Angaben konnten nicht sicher übernommen werden.",
+  semantics_secret: "Die erkannten Angaben konnten nicht sicher übernommen werden.",
+  semantics_title: "Die erkannten Angaben konnten nicht sicher übernommen werden.",
+  semantics_warning: "Die erkannten Angaben konnten nicht sicher übernommen werden.",
   provider_unavailable: "Die Verarbeitung ist vorübergehend nicht erreichbar. Bitte versuchen Sie es später erneut.",
   provider_timeout: "Die Verarbeitung hat zu lange gedauert. Bitte versuchen Sie es erneut.",
   forbidden: "Das Dokument ist nicht verfügbar.",
@@ -24,7 +31,12 @@ export const extractionErrorMessages: Record<string, string> = {
 };
 
 export function extractionErrorMessage(code: string | null | undefined): string {
-  return extractionErrorMessages[code ?? "unknown"] ?? extractionErrorMessages.unknown;
+  if (!code) return extractionErrorMessages.unknown;
+  if (code in extractionErrorMessages) return extractionErrorMessages[code];
+  if (code.startsWith("semantics_") || code.startsWith("invalid_extraction_semantics")) {
+    return extractionErrorMessages.invalid_extraction_semantics;
+  }
+  return extractionErrorMessages.unknown;
 }
 
 export function fieldValue(candidate: ExtractionCandidate, fieldPath: string): string | null {

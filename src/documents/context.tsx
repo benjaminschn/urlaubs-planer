@@ -169,8 +169,9 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
           runs: [result.run, ...current.runs.filter((run) => run.id !== result.run.id)],
           message: undefined
         }));
-        await reload();
       }
+      // Always re-sync from the server so terminal failures after realtime "processing" are not stuck.
+      await reload();
       return result;
     },
     [gateway, reload, trip]

@@ -37,4 +37,22 @@ describe("Candidate-Prüfstand", () => {
   it("blockiert Bestätigung ohne Pflichtkern", () => {
     expect(validateCanonicalPayload({ event_type_code: "activity", title: "", start_time: null, segments: [] })).toHaveLength(2);
   });
+
+  it("bewahrt lokale Uhrzeit ohne erfundene Zeitzone als unresolved exact_time", () => {
+    const value = candidate("accommodation");
+    value.fields.push(
+      { fieldPath: "start.local_time", occurrenceKey: "", originalValue: "15:00", value: "15:00", provenance: "explicit", confidence: 0.9, sourceLocator: [] },
+      { fieldPath: "start.precision", occurrenceKey: "", originalValue: "exact_time", value: "exact_time", provenance: "explicit", confidence: 0.9, sourceLocator: [] },
+      { fieldPath: "start.resolution_status", occurrenceKey: "", originalValue: "unresolved", value: "unresolved", provenance: "inferred", confidence: 0.5, sourceLocator: [] }
+    );
+    expect(candidateToCanonicalPayload(value).start_time).toEqual({
+      local_date: "2026-09-01",
+      local_time: "15:00",
+      precision: "exact_time",
+      iana_time_zone: null,
+      utc_offset_minutes: null,
+      instant_utc: null,
+      resolution_status: "unresolved"
+    });
+  });
 });
