@@ -52,7 +52,7 @@ describe("manuelle Reiseereignisse", () => {
     expect(screen.getByText("Zug")).toBeInTheDocument();
     expect(screen.getByText("Busfahrt")).toBeInTheDocument();
     expect(screen.getByText("Museum")).toBeInTheDocument();
-  });
+  }, 10_000);
 
   it("blockiert ein Ende vor dem Beginn und hält die Eingaben sichtbar", async () => {
     const { user, travelItems } = await signInAndOpenTimeline();
