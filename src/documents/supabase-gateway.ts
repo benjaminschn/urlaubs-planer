@@ -52,6 +52,19 @@ function asRecord(value: unknown): RecordLike | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as RecordLike) : null;
 }
 
+async function readFunctionErrorCode(error: unknown): Promise<string | undefined> {
+  const context = asRecord(asRecord(error)?.context);
+  if (!context) return undefined;
+  const response = typeof context.clone === "function" ? context.clone() : context;
+  if (!response || typeof response.json !== "function") return undefined;
+  try {
+    const body = asRecord(await response.json());
+    return typeof body?.code === "string" ? body.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function firstRow(value: unknown): RecordLike | null {
   return Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
 }
@@ -397,7 +410,8 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
         body: { document_id: input.documentId, idempotency_key: input.idempotencyKey }
       });
       const body = asRecord(data);
-      const code = typeof body?.code === "string" ? body.code : undefined;
+      const responseCode = error ? await readFunctionErrorCode(error) : undefined;
+      const code = typeof body?.code === "string" ? body.code : responseCode;
       if (error || !body) {
         const message = error instanceof Error ? error.message : "";
         const extractedCode = code ?? message.match(/\b([a-z_]+)\b/)?.[1];
