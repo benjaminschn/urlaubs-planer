@@ -12,7 +12,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "prompt",
+      // autoUpdate: new deploys replace the controlling SW immediately.
+      // "prompt" was used without an update UI, so clients stayed on old precache forever.
+      registerType: "autoUpdate",
       injectRegister: "auto",
       includeAssets: ["icon.svg", "offline.html"],
       manifest: {
@@ -23,8 +25,8 @@ export default defineConfig({
         start_url: "./#/app",
         scope: "./",
         display: "standalone",
-        background_color: "#f5f7f8",
-        theme_color: "#143642",
+        background_color: "#eef3f4",
+        theme_color: "#0f4c5c",
         icons: [
           {
             src: "./icon.svg",
@@ -37,7 +39,10 @@ export default defineConfig({
       workbox: {
         navigateFallback: "offline.html",
         navigateFallbackDenylist: [/^\/supabase\//, /^\/rest\//, /^\/functions\//],
-        runtimeCaching: []
+        runtimeCaching: [],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true
       },
       devOptions: {
         enabled: false
