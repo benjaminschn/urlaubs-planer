@@ -1,15 +1,45 @@
 import { describe, expect, it } from "vitest";
 import { validateAndAdapt } from "../../supabase/functions/_shared/extraction-semantics";
 
-function known(value: unknown) {
+type FieldShell = {
+  value: unknown;
+  provenance: string;
+  confidence: number | null;
+  evidence: Array<{ page_number: number; source_hint: string }>;
+};
+
+type TimeShell = {
+  local_date: FieldShell;
+  local_time: FieldShell;
+  precision: FieldShell;
+  iana_time_zone: FieldShell;
+  utc_offset: FieldShell;
+  instant_utc: FieldShell;
+  resolution_status: FieldShell;
+};
+
+type TestEvent = {
+  event_index: number;
+  event_type: FieldShell;
+  title: FieldShell;
+  start: TimeShell;
+  end: TimeShell;
+  cancellation_deadline: TimeShell;
+  booking_reference: FieldShell;
+  details: Record<string, unknown>;
+  notes?: FieldShell;
+  provider_name?: FieldShell;
+};
+
+function known(value: unknown): FieldShell {
   return { value, provenance: "explicit", confidence: 0.9, evidence: [{ page_number: 1, source_hint: "Bestätigung" }] };
 }
 
-function unknown() {
+function unknown(): FieldShell {
   return { value: null, provenance: "unknown", confidence: null, evidence: [] };
 }
 
-function dateOnly(date: string | null = null) {
+function dateOnly(date: string | null = null): TimeShell {
   return {
     local_date: date ? known(date) : unknown(),
     local_time: unknown(),
@@ -21,7 +51,7 @@ function dateOnly(date: string | null = null) {
   };
 }
 
-function event(eventIndex: number, eventType: string, title = `${eventType} Buchung`) {
+function event(eventIndex: number, eventType: string, title = `${eventType} Buchung`): TestEvent {
   return {
     event_index: eventIndex,
     event_type: known(eventType),
