@@ -17,10 +17,12 @@ jobs:
       - name: Node einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: 24.x
+          node-version: 24.15.0
           cache: npm
       - name: Abhängigkeiten installieren
         run: npm ci
+      - name: Produktionsabhängigkeiten auf bekannte Schwachstellen prüfen
+        run: npm audit --omit=dev --audit-level=high
       - name: Supabase CLI einrichten
         uses: supabase/setup-cli@v1
         with:
@@ -46,14 +48,14 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Build prüfen
-        run: npm run check:build && npm run check:bundle && npm run check:manifest
+        run: npm run check:build && npm run check:bundle && npm run check:manifest && npm run check:pwa
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
       - name: Secrets und Source Maps prüfen
         run: npm run check:secrets
       - name: Playwright installieren
-        run: npx playwright install --with-deps chromium
-      - name: Browser-E2E
+        run: npx playwright install --with-deps chromium webkit
+      - name: Browser-E2E in Chromium und WebKit
         run: npm run test:e2e
 
   deploy-supabase:
@@ -68,6 +70,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.PRODUCTION_DB_PASSWORD }}
       SUPABASE_PROJECT_ID: ${{ secrets.PRODUCTION_PROJECT_ID }}
+      EXTRACTION_WORKER_TOKEN: ${{ secrets.EXTRACTION_WORKER_TOKEN }}
     steps:
       - name: Repository auschecken
         uses: actions/checkout@v4
@@ -77,8 +80,129 @@ jobs:
           version: 2.111.0
       - name: Produktionsprojekt verknüpfen
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Nicht-mutierende Produktions-Preflights
+        run: |
+          if [[ ! "$EXTRACTION_WORKER_TOKEN" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "EXTRACTION_WORKER_TOKEN muss ein zufälliger 64-stelliger Hexwert sein." >&2
+            exit 1
+          fi
+          status="$(supabase projects list --output json | jq -r --arg project "$SUPABASE_PROJECT_ID" '.[] | select(.id == $project) | .status')"
+          if [[ "$status" != "ACTIVE_HEALTHY" ]]; then
+            echo "Supabase-Produktion ist nicht gesund: ${status:-nicht gefunden}" >&2
+            exit 1
+          fi
+          required=(
+            APP_ORIGIN
+            OPENAI_API_KEY
+            OPENAI_EXTRACTION_MAX_OUTPUT_TOKENS
+            OPENAI_EXTRACTION_MODEL
+            OPENAI_INPUT_MICRO_EUR_PER_TOKEN
+            OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN
+            OPENAI_MAX_RUN_COST_MICRO_EUR
+            OPENAI_OUTPUT_MICRO_EUR_PER_TOKEN
+            OPENAI_PRICING_VERSION
+            MALWARE_SCAN_TOKEN
+            MALWARE_SCAN_URL
+          )
+          present="$(supabase secrets list --project-ref "$SUPABASE_PROJECT_ID" --output json | jq -r '.[].name')"
+          for secret_name in "${required[@]}"; do
+            if ! grep -qx "$secret_name" <<<"$present"; then
+              echo "Erforderliches Supabase-Secret fehlt: $secret_name" >&2
+              exit 1
+            fi
+          done
+          supabase db push --linked --dry-run
       - name: Migrationen vor dem Frontend ausrollen
         run: supabase db push --linked --yes
+      - name: Travel-Item-Schema-Fingerprint prüfen
+        run: supabase db query --linked --file scripts/check-production-schema-fingerprint.sql
+      - name: Auth- und Projektkonfiguration ausrollen
+        run: supabase config push --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Produktions-Advisors gegen dokumentierte Allowlist prüfen
+        run: |
+          allowed_definer_functions='[
+            "apply_candidate_correction",
+            "apply_candidate_review",
+            "claim_document_verification",
+            "confirm_candidate",
+            "create_travel_item",
+            "delete_travel_item",
+            "discard_candidate",
+            "mark_document_upload_failed",
+            "prepare_document_upload_retry",
+            "reserve_document_upload",
+            "update_travel_item",
+            "update_trip"
+          ]'
+          advisor_report="$(supabase db advisors --linked --type all --level warn)"
+          unexpected="$(jq \
+            --argjson allowed "$allowed_definer_functions" \
+            '[.results[] | select((
+              (.name == "authenticated_security_definer_function_executable" and
+                (.metadata.name as $function_name | ($allowed | index($function_name)) != null)) or
+              .name == "auth_leaked_password_protection" or
+              .name == "auth_insufficient_mfa_options"
+            ) | not)]' <<<"$advisor_report")"
+          if [[ "$(jq 'length' <<<"$unexpected")" != "0" ]]; then
+            echo "Unerwartete Produktions-Advisor-Funde:" >&2
+            jq . <<<"$unexpected" >&2
+            exit 1
+          fi
+          echo "Produktions-Advisors entsprechen der dokumentierten Allowlist."
+      - name: Extraction-Worker-Credential provisionieren
+        run: |
+          supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" EXTRACTION_WORKER_TOKEN="$EXTRACTION_WORKER_TOKEN"
+          vault_sql="$(mktemp)"
+          chmod 600 "$vault_sql"
+          trap 'rm -f "$vault_sql"' EXIT
+          printf '%s\n' \
+            'do $vault$' \
+            'declare project_url_id uuid; worker_token_id uuid;' \
+            'begin' \
+            "  select id into project_url_id from vault.secrets where name = 'extraction_project_url' limit 1;" \
+            "  if project_url_id is null then perform vault.create_secret('https://${SUPABASE_PROJECT_ID}.supabase.co', 'extraction_project_url', 'Extraction worker project URL', null);" \
+            "  else perform vault.update_secret(project_url_id, 'https://${SUPABASE_PROJECT_ID}.supabase.co', 'extraction_project_url', 'Extraction worker project URL', null); end if;" \
+            "  select id into worker_token_id from vault.secrets where name = 'extraction_worker_token' limit 1;" \
+            "  if worker_token_id is null then perform vault.create_secret('${EXTRACTION_WORKER_TOKEN}', 'extraction_worker_token', 'Extraction worker invocation credential', null);" \
+            "  else perform vault.update_secret(worker_token_id, '${EXTRACTION_WORKER_TOKEN}', 'extraction_worker_token', 'Extraction worker invocation credential', null); end if;" \
+            'end' \
+            '$vault$;' > "$vault_sql"
+          supabase db query --linked --file "$vault_sql" >/dev/null
+      - name: Edge Functions reproduzierbar ausrollen
+        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID" --use-api --jobs 2
+      - name: Edge-Function-Deployment prüfen
+        run: |
+          expected="$(find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name '_shared' -exec basename {} \; | sort)"
+          active="$(supabase functions list --project-ref "$SUPABASE_PROJECT_ID" --output json | jq -r '.[] | select(.status == "ACTIVE") | .slug' | sort)"
+          while IFS= read -r function_name; do
+            if [[ -n "$function_name" ]] && ! grep -qx "$function_name" <<<"$active"; then
+              echo "Edge Function ist nicht ACTIVE: $function_name" >&2
+              exit 1
+            fi
+          done <<<"$expected"
+      - name: Authentifizierten Extraction-Worker prüfen
+        run: |
+          response="$(curl --fail --silent --show-error --max-time 20 \
+            "https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/process-document-extractions" \
+            -H "Content-Type: application/json" \
+            -H "X-Extraction-Worker-Token: ${EXTRACTION_WORKER_TOKEN}" \
+            --data '{"health_check":true}')"
+          if ! jq -e '.healthy == true' <<<"$response" >/dev/null; then
+            echo "Extraction-Worker-Healthcheck war nicht erfolgreich." >&2
+            exit 1
+          fi
+      - name: Extraction-Worker-Schedule erst nach Worker-Deployment aktivieren
+        run: supabase db query --linked "select private.install_extraction_worker_schedule()"
+      - name: Cron- und pg_net-Ausführung prüfen
+        run: |
+          for attempt in {1..12}; do
+            if supabase db query --linked --file scripts/check-extraction-worker-schedule.sql; then
+              exit 0
+            fi
+            if [[ "$attempt" -lt 12 ]]; then sleep 10; fi
+          done
+          echo "Extraction-Worker wurde nicht erfolgreich durch Cron/pg_net ausgeführt." >&2
+          exit 1
 
   deploy:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
@@ -97,7 +221,7 @@ jobs:
       - name: Node einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: 24.x
+          node-version: 24.15.0
           cache: npm
       - name: Abhängigkeiten installieren
         run: npm ci
@@ -116,3 +240,9 @@ jobs:
       - name: Pages veröffentlichen
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Öffentliches Deployment prüfen
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          curl --fail --silent --show-error --location --retry 6 --retry-all-errors --max-time 20 "$PAGE_URL" >/dev/null
+          curl --fail --silent --show-error --location --retry 6 --retry-all-errors --max-time 20 "${PAGE_URL%/}/manifest.webmanifest" >/dev/null

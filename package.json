@@ -15,8 +15,9 @@
     "check:build": "node scripts/check-build.mjs",
     "check:bundle": "node scripts/check-bundle.mjs",
     "check:manifest": "node scripts/check-manifest.mjs",
+    "check:pwa": "node scripts/check-pwa.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run check:build && npm run check:bundle && npm run check:manifest && npm run check:secrets"
+    "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run check:build && npm run check:bundle && npm run check:manifest && npm run check:pwa && npm run check:secrets"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.111.0",

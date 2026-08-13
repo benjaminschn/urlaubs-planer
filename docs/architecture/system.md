@@ -110,14 +110,15 @@ Das Dokument legt bewusst kein vollständiges Datenbankschema fest. Benötigt we
 - dient nur als Änderungssignal; der Client lädt anschließend den autorisierten, kanonischen Datensatz erneut;
 - ist kein Ersatz für RLS, Transaktionen oder Konfliktprüfung.
 
-### Supabase Edge Function
+### Supabase Edge Functions und Queue-Worker
 
 - prüft das Nutzer-JWT und zusätzlich die Mitgliedschaft zur betroffenen Reise;
 - nimmt niemals frei übermittelte Storage-Pfade oder OpenAI-Parameter ungeprüft an;
 - setzt Dateigrößen-, Mengen-, Parallelitäts- und Nutzungslimits serverseitig durch;
-- liest das Original aus dem privaten Storage, ruft OpenAI auf und validiert das Ergebnis erneut;
+- reserviert den Extraktionslauf in einer dauerhaften PostgreSQL-Queue und antwortet dem Browser mit `202`;
+- ein ausschließlich intern aufrufbarer Worker beansprucht fällige Runs mit `FOR UPDATE SKIP LOCKED`, liest das Original, ruft OpenAI auf und validiert das Ergebnis erneut;
 - schreibt nur Entwürfe und Status, niemals automatisch bestätigte Timeline-Ereignisse;
-- besitzt den OpenAI API Key und, falls für Hintergrundverarbeitung nötig, einen Supabase-Service-Schlüssel.
+- besitzt den OpenAI API Key und einen Supabase-Service-Schlüssel. Der Worker-Aufruf verwendet ein getrenntes, zufälliges Credential; Function-Secret und Vault-Wert werden beim Backend-Deployment gemeinsam provisioniert.
 
 Ein Service-Schlüssel umgeht RLS. Sein Einsatz ist deshalb auf die Edge Function beschränkt; vor jeder privilegierten Aktion erfolgt eine explizite Mitgliedschafts- und Zustandsprüfung.
 
@@ -134,7 +135,7 @@ Structured Outputs garantiert die Form, nicht die fachliche Richtigkeit. Deshalb
 
 1. **Browser ↔ GitHub Pages:** Sämtliche ausgelieferten Dateien sind öffentlich lesbar. In Builds dürfen daher keine privaten Daten, Service-Schlüssel oder der OpenAI API Key enthalten sein. Auch vermeintlich versteckte `VITE_*`-Variablen sind öffentlich.
 2. **Browser ↔ Supabase:** Das Gerät besitzt eine Nutzersitzung, aber keine administrativen Rechte. Jede Anfrage muss durch Auth und RLS beziehungsweise Storage-Policies autorisiert werden. Clientseitige Filter sind keine Sicherheitsgrenze.
-3. **Browser ↔ Edge Function:** Die Funktion akzeptiert nur ein gültiges Nutzer-JWT, prüft die Reisemitgliedschaft und arbeitet idempotent. Sie vertraut weder Dateityp, Dateigröße, Status noch IDs aus dem Browser.
+3. **Browser ↔ Edge Function:** Browserendpunkte akzeptieren nur ein gültiges Nutzer-JWT, prüfen die Reisemitgliedschaft und arbeiten idempotent. Der interne Queue-Worker ist nicht browserfähig, deaktiviert die Plattform-JWT-Prüfung und vergleicht stattdessen ein eigenes serverseitiges Worker-Credential, bevor er privilegierte Daten liest.
 4. **Edge Function ↔ OpenAI:** Hier verlässt Dokumentinhalt den Supabase-Vertrauensbereich. Übertragen wird nur das angeforderte Original; Logs und Datenbank speichern keine vollständige Modellanfrage oder Dokumentkopie.
 5. **GitHub Actions ↔ Laufzeitumgebungen:** Deployment-Zugangsdaten liegen als geschützte Actions-/Environment-Secrets vor und werden nicht in den Frontend-Build gereicht. Der OpenAI API Key soll direkt als Supabase-Secret verwaltet werden.
 
@@ -189,7 +190,8 @@ sequenceDiagram
     actor U as Angemeldete Person
     participant P as PWA
     participant S as Supabase DB/Storage
-    participant F as Edge Function
+    participant F as Start-Function
+    participant W as interner Queue-Worker
     participant O as OpenAI Responses API
 
     U->>P: Datei auswählen
@@ -198,11 +200,15 @@ sequenceDiagram
     P->>S: Upload abschließen
     P->>F: Extraktion mit Dokument-ID starten
     F->>F: JWT, Mitgliedschaft, Status und Limits prüfen
-    F->>S: Job atomar beanspruchen und Original lesen
-    F->>O: Erforderliche Datei/Bild + striktes Ausgabeschema
-    O-->>F: Schema-konformes Extraktionsergebnis
-    F->>F: Semantik, Limits und Schema erneut validieren
-    F->>S: Entwürfe und Endstatus atomar speichern
+    F->>S: Run und Budget atomar reservieren
+    F-->>P: 202 Accepted
+    F-->>W: Best-effort Worker-Kick
+    W->>S: Fälligen Run mit SKIP LOCKED und Lease beanspruchen
+    W->>O: Erforderliche Datei/Bild + striktes Ausgabeschema
+    O-->>W: Schema-konformes Extraktionsergebnis und Usage
+    W->>S: Providerkosten unverzüglich idempotent verbuchen
+    W->>W: Semantik, Limits und Schema erneut validieren
+    W->>S: Entwürfe und Endstatus atomar speichern
     S-->>P: Realtime-Signal; PWA lädt Status neu
     P-->>U: Entwürfe zur Kontrolle anzeigen
     U->>P: Korrigieren und ausdrücklich bestätigen
@@ -215,14 +221,14 @@ sequenceDiagram
 1. **Auswahl:** Der Browser prüft Größe und offensichtlichen Typ nur als UX-Hilfe. Die verbindliche Prüfung erfolgt serverseitig anhand Metadaten und, soweit praktikabel, Dateisignatur.
 2. **Upload:** Jede Datei erhält eine zufällige Dokument-ID und einen Idempotenzschlüssel. Mehrfaches Tippen oder Wiederholen desselben laufenden Vorgangs legt nicht unkontrolliert Duplikate an.
 3. **Status:** Dokument und Job durchlaufen persistente, monotone Zustände wie `uploading`, `uploaded`, `processing`, `drafts_ready`, `failed` oder `unsupported`. Die UI erfindet keinen Fortschrittsprozentsatz.
-4. **Verarbeitung:** Die Edge Function beansprucht einen Job atomar. Pro Dokument darf höchstens eine aktive Extraktion laufen. Ein Retry übernimmt nur einen fehlgeschlagenen oder abgelaufenen Job und erhält das Original.
+4. **Verarbeitung:** Der Worker beansprucht genau einen fälligen Job atomar. Eine Lease gilt 120 Sekunden; ein minütlicher Cron-Kick und jeder neue Start lösen Worker-Aufrufe aus. Abgelaufene Leases werden zurück in die Queue gestellt. Pro Dokument darf höchstens eine aktive Extraktion laufen; nach höchstens drei Provider-Versuchen endet ein Run terminal.
 5. **OpenAI-Eingabe:** Unterstützte Dokumente einschließlich PDF werden als Dateieingabe, unterstützte Bilder als Bildeingabe über die Responses API verarbeitet. Die tatsächlich unterstützten Formate bleiben von gewähltem Modell und aktueller API abhängig; die App behauptet keine dauerhaft feste Positivliste.
 6. **Structured Outputs:** Das strikte, versionierte Schema enthält eine Liste von Ereignisentwürfen der fünf zulässigen Arten, optionale Teilstrecken, zusätzliche Bezeichnung-Wert-Paare und Kennzeichnungen unsicherer Felder. Es begrenzt Anzahl und Länge frei erzeugbarer Werte.
 7. **Servervalidierung:** Die Funktion akzeptiert trotz Structured Outputs nur bekannte Ereignisarten, plausible Datentypen und konfigurierte Größen. Fachlich unbekannte Angaben bleiben leer oder als unsicher markiert. Vollständige Modellantworten und Reasoning-Inhalte werden nicht dauerhaft gespeichert.
 8. **Ergebnis:** Es entstehen nur editierbare Entwürfe. Erst die gesonderte, validierte Nutzerbestätigung erzeugt ein Timeline-Ereignis.
 9. **OpenAI-Datei:** Falls die API einen temporären Datei-Upload verlangt, wird dessen ID nur für den Job gehalten und die Datei nach Abschluss bestmöglich gelöscht. Die tatsächlichen Aufbewahrungsbedingungen des gewählten OpenAI-Projekts müssen vor privater Nutzung geprüft und dokumentiert werden.
 
-Die Verarbeitung wird als Job modelliert, auch wenn die erste Implementierung ihn innerhalb eines Edge-Function-Aufrufs abarbeitet. Dadurch kann später ohne UI- oder Datenmodellbruch auf serverseitiges Polling oder einen Hintergrund-Worker gewechselt werden. Laufzeit-, Speicher- und Requestlimits der Edge Function sind vor Implementierung mit repräsentativen Dateien zu testen.
+Die Verarbeitung läuft bereits als dauerhafte Datenbankqueue mit getrenntem Worker. Ein Start-Request wartet nicht auf Datei-Upload zu OpenAI oder Modellausgabe. Die Queue ist der kanonische Zustand; der direkte Worker-Kick ist nur eine Latenzoptimierung, während der Cron-Aufruf die Recovery-Garantie liefert. Laufzeit-, Speicher- und Requestlimits der Edge Function bleiben mit repräsentativen Dateien und absichtlichen Worker-Unterbrechungen zu testen.
 
 ## 11. API-Schlüssel und Secrets
 

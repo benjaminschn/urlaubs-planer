@@ -24,5 +24,13 @@ if (!Array.isArray(manifest.icons) || manifest.icons.length === 0) {
 if (manifest.icons.some((icon) => typeof icon.src !== "string" || /^https?:/i.test(icon.src))) {
   throw new Error("Manifest-Icons müssen lokale Assets sein.");
 }
+const rasterSizes = new Set(
+  manifest.icons
+    .filter((icon) => icon.type === "image/png")
+    .map((icon) => icon.sizes)
+);
+if (!rasterSizes.has("192x192") || !rasterSizes.has("512x512")) {
+  throw new Error("Manifest benötigt installierbare PNG-Icons in 192x192 und 512x512.");
+}
 
 console.log("Manifest-Prüfung erfolgreich.");

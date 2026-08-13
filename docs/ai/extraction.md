@@ -228,6 +228,10 @@ Jeder Test prüft zusätzlich Schema-Strictness, vollständige `required`-Proper
 
 ## 8. Überführung in einen ExtractionCandidate
 
+Vor der Konvertierung durchläuft jeder Run den dauerhaften Worker-Lebenszyklus `queued → processing → succeeded|failed_*`. Die browserfähige Start-Function reserviert Run und Budget idempotent und antwortet mit `202`; sie wartet nicht auf OpenAI. Ein interner Worker beansprucht fällige Zeilen mit `SKIP LOCKED` und einer 120-Sekunden-Lease. Ein Best-effort-Kick reduziert die Startlatenz, ein minütlicher Vault-geschützter Cron-Aufruf übernimmt verpasste oder abgelaufene Arbeit. Nach höchstens drei Provider-Versuchen endet der Run terminal.
+
+Jede Responses-API-HTTP-200-Antwort kann kostenpflichtig sein. Darum wird ihre Usage beziehungsweise konservativ der verbleibende Reservierungsrest in einem idempotenten Ledger verbucht, bevor JSON, Schema, Semantik oder Candidate-Speicherung geprüft werden. Provider-Request-ID und Versuchszahl verhindern Doppelbelastung bei Replays.
+
 Die Konvertierung ist ein serverseitiger, versionierter Adapter. Sie ist deterministisch und erhält die LLM-Herkunft; sie ist keine zweite inhaltliche Extraktion.
 
 1. Die Edge Function erzeugt den `ExtractionRun` aus vertrauenswürdigen Serverdaten. `model_identifier`, `extraction_schema_version` und `prompt_version` stammen nie aus der Modellantwort.

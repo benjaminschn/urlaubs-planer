@@ -1,8 +1,36 @@
 # Umsetzungsroadmap: Gemeinsamer Reiseplaner
 
-**Status:** Umsetzungsplan, keine Implementierung  
-**Stand:** 2. August 2026  
+**Status:** Implementierung weit fortgeschritten; MVP noch nicht releasefähig
+**Stand:** 13. August 2026
 **Grundlagen:** [Produktbrief](product/brief.md), [UX-Flows](ux/flows.md), [Systemarchitektur](architecture/system.md), [Domain-Modell](data/domain-model.md), [Extraktionsvertrag](ai/extraction.md) und [Threat Model](security/threat-model.md)
+
+## 0. Nachweisbarer Implementierungsstand
+
+Diese Statusübersicht beschreibt den Repository- und Produktionsstand vom 13. August 2026. Die späteren Abschnitte bleiben als verbindliche Definition of Done bestehen; ein Schnitt ist dort bewusst strenger als „Code vorhanden“.
+
+| Schnitt | Stand | Nachweis | Noch offen bis Definition of Done |
+| --- | --- | --- | --- |
+| 1 – PWA/Auth/Deployment | Teilweise produktiv | Geschützte Hash-Routen, Passwort/TOTP-Flow, AAL2-Policies, deaktivierte Signups, engere Auth-Ratenlimits, Secret-/Build-Gates und Pages-Deployment sind implementiert. Das pausierte Supabase-Projekt wurde wieder auf `ACTIVE_HEALTHY` gebracht. | Produktion besitzt erst ein aktives Konto mit einem verifizierten TOTP-Faktor; zweites persönliches Konto fehlt. Die geforderten absoluten/Inaktivitäts-Sessionlimits sind im Free-Plan nicht verfügbar. GitHub Pages liefert keine setzbaren CSP-/Clickjacking-Header. Auth-/Recovery- und echtes Geräte-Smoke-Testing fehlen. |
+| 2 – Gemeinsame Reise/Realtime | Implementiert, Produktionsabnahme blockiert | Versionierter Reisekopf, Default-Deny-RLS, Realtime als Invalidierung, Reload-Fallback und Konfliktbehandlung sind in App, Migrationen und Tests vorhanden. | Produktion hat eine statt zwei aktiver Mitgliedschaften; Zwei-Geräte-/Zwei-Konten-Abnahme ist deshalb noch nicht möglich. |
+| 3 – Manuelle Ereignisse/Timeline | Implementiert und automatisiert geprüft | Alle fünf Ereignisarten, gemeinsame/typspezifische Felder, Teilstrecken, Zeitmodell, Revisionen, Soft Delete, Timeline und Konflikte sind implementiert. Historische Produktionsdrift wurde durch Vorwärtsmigrationen behoben; lokale und produktive Spalten, Constraints, Funktionen, Indizes, Policies, RLS-Flags und Trigger stimmen fingerprint-genau überein. | Manuelle iPhone-/Safari- und Produktionsabnahme sowie dokumentierter echter Rollbacknachweis fehlen. |
+| 4 – Privater Dokument-Upload | Technisch erweitert, nicht produktionsbereit | Privater Quarantäne-Bucket, serverseitige Reservierung/Limits, Signatur-/Struktur-/Pixelprüfung, passive PDF/Bild/Text/EML- und DOCX/XLSX/PPTX-Prüfung, ZIP-Bomb/Traversal/aktive-Inhalte-Schutz, SHA-256 und fail-closed Scanner-Vertrag sind implementiert. | Scanneranbieter, Region/Aufbewahrung und `MALWARE_SCAN_URL`/`MALWARE_SCAN_TOKEN` sind nicht entschieden/konfiguriert; neuer Verifier ist deshalb bewusst nicht ausgerollt. Gesondertes Dokumentlöschrecht bleibt fachlich offen. |
+| 5 – Dokumentextraktion | Implementiert, Backend produktiv ausgerollt | Dauerhafte Queue, `SKIP LOCKED`-Claims, 120-s-Leases, maximal drei Versuche, Recovery-Cron, idempotentes Kosten-Ledger, strukturierte Ausgabeprüfung und temporäre Providerdateilöschung sind implementiert; Start liefert `202`. Migrationen, Start-/Worker-Functions, Worker-Credential und minütlicher Cron sind produktiv; ein Cron-HTTP-Aufruf endete nach Deployment mit HTTP 200. | Live-Extraktion mit einer synthetischen repräsentativen Datei und absichtlicher Worker-Unterbrechung fehlt. Preis-Secrets bleiben laufend zu pflegen. |
+| 6 – Kontroll-/Korrekturansicht | Implementiert und automatisiert geprüft | Roh-JSON wurde durch den vollständigen strukturierten Editor für alle fünf Ereignisarten ersetzt; Evidenz, Unsicherheit, Validierung, Konflikt-/Dirty-State und Feldkorrekturen sind abgedeckt. Mehrere Feldkorrekturen und der kanonische Snapshot werden durch eine Batch-RPC atomar append-only geschrieben. | Manuelle Originalvergleichs-Abnahme auf Zielgeräten fehlt. |
+| 7 – Bestätigung/Timeline | Implementiert und DB-geprüft | Kandidatenbestätigung ist serverseitig autorisiert, atomar/idempotent und verknüpft Original und genau ein bestätigtes TravelItem; Replay-/Konflikttests sind vorhanden. | Produktions-Smoke-Test mit beiden Konten und synthetischem Dokument fehlt. |
+| 8 – Karte | Nicht begonnen | Bewusst außerhalb des MVP. | Nur nach formaler Scope-Freigabe. |
+| 9 – Offline-/PWA-Politur | Implementiert und automatisiert geprüft | Kontrollierte Service-Worker-Aktivierung, Formularschutz auch tabübergreifend, Offline-/Stale-/Reconnect-UX, Shell-only-Cache-Audit und installierbare PNG-Icons sind vorhanden. Chromium- und WebKit-Projekte sind konfiguriert. | Manuelle Installation/Update/Offline-Abnahme auf echtem iPhone/Safari und unterstütztem Desktop-Safari fehlt. |
+
+### Aktuelle Release-Blocker
+
+1. Zweites persönliches Produktionskonto einschließlich verifiziertem TOTP und zweiter aktiver Reisemitgliedschaft bereitstellen.
+2. Malware-Scanner/Isolationsanbieter und Datenschutzparameter festlegen, Secrets setzen und Upload-Verifier produktiv ausrollen.
+3. Hosting mit wirksamen Response-Headern wählen oder einen Header-fähigen Origin vor GitHub Pages setzen; `frame-ancestors` in HTML-Meta ist nicht wirksam.
+4. Den vollständigen synthetischen Produktions-Smoke-Test einschließlich Live-Extraktion und absichtlicher Worker-Unterbrechung durchführen.
+5. Echte iPhone-/Safari- und Desktop-Safari-Abnahme, Backup-/Restore-Probe und Rollbacknachweis dokumentieren.
+6. Fachliche Entscheidungen zu Dokument-/Kontolöschung, Aufbewahrung und Scanner-/Providerdaten abschließen.
+7. Für erzwungene Session-Timebox/Inaktivitätsgrenze und Supabase-Schutz gegen geleakte Passwörter entweder den kostenpflichtigen Supabase-Plan freigeben oder gleichwertige, getestete serverseitige Strategien spezifizieren.
+
+Der konkrete Release- und Recovery-Ablauf steht in [Deployment- und Betriebsrunbook](operations/deployment.md); Incident- und Datenlebenszyklusregeln stehen in [Incident- und Datenlebenszyklus-Runbook](operations/incidents-and-data-lifecycle.md).
 
 ## 1. Ziel und Lesart
 

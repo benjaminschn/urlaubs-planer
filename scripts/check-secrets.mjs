@@ -3,8 +3,9 @@ import { join, relative } from "node:path";
 
 const root = new URL("../", import.meta.url);
 const rootPath = root.pathname;
-const sourceRoots = ["src", "public", "scripts", ".github", "supabase"];
+const sourceRoots = ["src", "public", "scripts", ".github", "supabase", "docs", "schemas", ".agents"];
 const sourceFiles = [
+  "README.md",
   "index.html",
   "package.json",
   "vite.config.ts",
@@ -30,9 +31,6 @@ function isIgnored(filePath) {
     relativePath.startsWith("node_modules/") ||
     relativePath === ".git" ||
     relativePath.startsWith(".git/") ||
-    relativePath.startsWith("docs/") ||
-    relativePath.startsWith(".agents/") ||
-    relativePath.startsWith("schemas/") ||
     relativePath.startsWith("dist/") ||
     relativePath.startsWith("supabase/.branches/") ||
     relativePath.startsWith("supabase/.temp/")
