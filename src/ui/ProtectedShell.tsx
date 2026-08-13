@@ -14,7 +14,7 @@ import { candidateRouteFromPath } from "../router/routes";
 
 export function ProtectedShell() {
   const { signOut } = useAuth();
-  const { route, navigate } = useRouter();
+  const { route, navigate, confirmNavigation, setNavigationGuard } = useRouter();
   const { state: tripState, realtimeStatus } = useTrip();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -26,6 +26,8 @@ export function ProtectedShell() {
     if (isSigningOut) {
       return;
     }
+    if (!confirmNavigation()) return;
+    setNavigationGuard(null);
     setIsSigningOut(true);
     await signOut();
     navigate("/login", { replace: true });

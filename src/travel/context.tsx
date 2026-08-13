@@ -17,6 +17,8 @@ import type {
   TravelItemPayload,
   TravelItemRealtimeStatus
 } from "./types";
+import { isNetworkAvailable, offlineActionMessage } from "../pwa/network";
+import { useOptionalPwa } from "../pwa/context";
 
 export type TravelItemState =
   | { status: "idle" | "loading" | "disabled"; items: TravelItem[]; message?: string }
@@ -49,6 +51,7 @@ type ProviderProps = PropsWithChildren<{ gateway: TravelItemGateway | null }>;
 
 export function TravelItemProvider({ children, gateway }: ProviderProps) {
   const { state: authState } = useAuth();
+  const pwa = useOptionalPwa();
   const { state: tripState } = useTrip();
   const [state, setState] = useState<TravelItemState>({ status: "idle", items: [] });
   const [realtimeStatus, setRealtimeStatus] = useState<TravelItemRealtimeStatus>("connecting");
@@ -57,6 +60,7 @@ export function TravelItemProvider({ children, gateway }: ProviderProps) {
   const requestNumber = useRef(0);
   const stateRef = useRef(state);
   const savingRef = useRef(false);
+  const lastReloadSucceeded = useRef(false);
   stateRef.current = state;
   const activeUserId = authState.status === "authenticated" ? authState.user.id : null;
   const trip = tripState.status === "ready" ? tripState.trip : null;
@@ -76,9 +80,11 @@ export function TravelItemProvider({ children, gateway }: ProviderProps) {
     if (request !== requestNumber.current) return [];
     setIsRefreshing(false);
     if (result.kind === "ready") {
+      lastReloadSucceeded.current = true;
       setState({ status: "ready", items: result.items });
       return result.items;
     }
+    lastReloadSucceeded.current = false;
     if (currentState.status === "ready" || currentState.status === "error") {
       setState({ status: "ready", items: currentState.items, message: loadErrorMessage });
       return currentState.items;
@@ -118,14 +124,17 @@ export function TravelItemProvider({ children, gateway }: ProviderProps) {
       if (document.visibilityState === "visible") refresh();
     };
     window.addEventListener("focus", refresh);
-    window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("focus", refresh);
-      window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [reload, state.status]);
+
+  useEffect(() => pwa?.registerResync("travel-items", async () => {
+    await reload();
+    return lastReloadSucceeded.current;
+  }), [pwa, reload]);
 
   const applyMutationResult = useCallback((result: TravelItemMutationResult): TravelItemMutationResult => {
     if (result.kind === "created" || result.kind === "updated") {
@@ -154,6 +163,9 @@ export function TravelItemProvider({ children, gateway }: ProviderProps) {
 
   const runMutation = useCallback(
     async (operation: () => Promise<TravelItemMutationResult>): Promise<TravelItemMutationResult> => {
+      if (!isNetworkAvailable()) {
+        return applyMutationResult({ kind: "unavailable", message: offlineActionMessage });
+      }
       if (savingRef.current || !gateway || !trip || stateRef.current.status !== "ready") {
         return { kind: "unavailable", message: saveErrorMessage };
       }

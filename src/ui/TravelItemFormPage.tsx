@@ -18,9 +18,9 @@ import type {
 import { eventTypeLabels } from "../travel/format";
 import { travelItemRouteFromPath } from "../router/routes";
 
-type LocationDraft = LocationInput;
+export type LocationDraft = LocationInput;
 
-type TimeDraft = {
+export type TimeDraft = {
   date: string;
   precision: LocalTimeValue["precision"];
   time: string;
@@ -28,7 +28,7 @@ type TimeDraft = {
   offset: number | null;
 };
 
-type SegmentDraft = {
+export type SegmentDraft = {
   id?: string;
   startLocation: LocationDraft;
   endLocation: LocationDraft;
@@ -37,7 +37,7 @@ type SegmentDraft = {
   details: Record<string, string>;
 };
 
-type FormDraft = {
+export type FormDraft = {
   eventTypeCode: EventTypeCode;
   title: string;
   bookingStatus: BookingStatus;
@@ -70,7 +70,7 @@ type FormDraft = {
 
 type FieldDefinition = { key: string; label: string; multiline?: boolean };
 
-const typeFieldDefinitions: Record<EventTypeCode, FieldDefinition[]> = {
+export const typeFieldDefinitions: Record<EventTypeCode, FieldDefinition[]> = {
   accommodation: [
     { key: "accommodation_name", label: "Name der Unterkunft" },
     { key: "accommodation_type", label: "Art der Unterkunft" },
@@ -185,7 +185,7 @@ const typeFieldDefinitions: Record<EventTypeCode, FieldDefinition[]> = {
   ]
 };
 
-const transportFieldDefinitions: FieldDefinition[] = [
+export const transportFieldDefinitions: FieldDefinition[] = [
   { key: "operator", label: "Anbieter oder Betreiber" },
   { key: "number", label: "Fahrt-/Linien-/Zugnummer" },
   { key: "departure_facility_code", label: "Startcode (IATA, Bahnhof, Haltestelle)" },
@@ -203,7 +203,7 @@ const transportFieldDefinitions: FieldDefinition[] = [
   { key: "conditions", label: "Ticket-, Tarif-, Umbuchungs- und Stornierungsbedingungen", multiline: true }
 ];
 
-function blankLocation(): LocationDraft {
+export function blankLocation(): LocationDraft {
   return {
     name: "",
     fullAddress: null,
@@ -221,11 +221,11 @@ function blankLocation(): LocationDraft {
   };
 }
 
-function blankTime(date: string, precision: LocalTimeValue["precision"] = "date_only"): TimeDraft {
+export function blankTime(date: string, precision: LocalTimeValue["precision"] = "date_only"): TimeDraft {
   return { date, precision, time: "", timeZone: "", offset: null };
 }
 
-function blankDraft(startDate: string): FormDraft {
+export function blankDraft(startDate: string): FormDraft {
   return {
     eventTypeCode: "accommodation",
     title: "",
@@ -277,8 +277,51 @@ function timeToDraft(value: LocalTimeValue | null): TimeDraft {
     : blankTime("");
 }
 
-function locationToDraft(value: TravelItem["locations"]["main"]): LocationDraft {
+function locationToDraft(value: LocationInput | null): LocationDraft {
   return value ? { ...value } : blankLocation();
+}
+
+export function payloadToDraft(payload: TravelItemPayload): FormDraft {
+  const common = payload.commonDetails;
+  return {
+    eventTypeCode: payload.eventTypeCode,
+    title: payload.title,
+    bookingStatus: payload.bookingStatus,
+    start: timeToDraft(payload.startTime),
+    end: timeToDraft(payload.endTime),
+    mainLocation: locationToDraft(payload.locations.main),
+    startLocation: locationToDraft(payload.locations.start),
+    endLocation: locationToDraft(payload.locations.end),
+    providerName: common.providerName,
+    bookingPlatformName: common.bookingPlatformName,
+    managementUrl: common.managementUrl,
+    bookingDate: common.bookingDate,
+    notes: common.notes,
+    references: common.references.map((reference) => `${reference.kind}:${reference.value}`).join("\n"),
+    travelers: common.travelers.join("\n"),
+    providerContacts: common.providerContacts
+      .map((contact) => [contact.role, contact.phone, contact.email, contact.website].join(" | "))
+      .join("\n"),
+    totalPrice: common.price.total,
+    currency: common.price.currency,
+    paid: common.price.paid,
+    outstanding: common.price.outstanding,
+    taxesAndFees: common.price.taxesAndFees,
+    paymentStatus: common.price.paymentStatus,
+    paymentMethodMasked: common.price.paymentMethodMasked,
+    cancellationDeadline: timeToDraft(common.cancellationDeadline),
+    cancellationConditions: common.cancellationConditions,
+    additionalAttributes: common.additionalAttributes.map((attribute) => `${attribute.label}=${attribute.value}|${attribute.unit}`).join("\n"),
+    typeFields: Object.fromEntries(Object.entries(payload.typeDetails).map(([key, value]) => [key, stringValue(value)])),
+    segments: payload.segments.map((segment) => ({
+      id: segment.id,
+      startLocation: { ...segment.startLocation },
+      endLocation: { ...segment.endLocation },
+      departure: timeToDraft(segment.departureTime),
+      arrival: timeToDraft(segment.arrivalTime),
+      details: Object.fromEntries(Object.entries(segment.details).map(([key, value]) => [key, stringValue(value)]))
+    }))
+  };
 }
 
 function itemToDraft(item: TravelItem): FormDraft {
@@ -358,7 +401,7 @@ function parseReferences(value: string): Reference[] {
     .filter(Boolean)
     .map((line) => {
       const [kind, ...rest] = line.split(":");
-      const allowed = ["booking", "reservation", "order", "ticket", "voucher"];
+      const allowed = ["booking", "reservation", "order", "ticket", "voucher", "other"];
       return {
         kind: allowed.includes(kind) ? (kind as Reference["kind"]) : "other",
         value: (allowed.includes(kind) ? rest.join(":") : line).trim()
@@ -403,7 +446,7 @@ function segmentToPayload(segment: SegmentDraft, index: number): TravelItemSegme
   };
 }
 
-function draftToPayload(draft: FormDraft): TravelItemPayload {
+export function draftToPayload(draft: FormDraft): TravelItemPayload {
   return {
     eventTypeCode: draft.eventTypeCode,
     title: draft.title,
@@ -442,7 +485,7 @@ function draftToPayload(draft: FormDraft): TravelItemPayload {
   };
 }
 
-function updateLocationField(
+export function updateLocationField(
   draft: FormDraft,
   key: "mainLocation" | "startLocation" | "endLocation",
   field: keyof LocationInput,
@@ -458,11 +501,11 @@ function updateLocationField(
   };
 }
 
-function updateTimeField(draft: FormDraft, key: "start" | "end" | "cancellationDeadline", field: keyof TimeDraft, value: string): FormDraft {
+export function updateTimeField(draft: FormDraft, key: "start" | "end" | "cancellationDeadline", field: keyof TimeDraft, value: string): FormDraft {
   return { ...draft, [key]: { ...draft[key], [field]: value, ...(field === "time" || field === "timeZone" ? { offset: null } : {}) } };
 }
 
-function InputField({
+export function InputField({
   id,
   label,
   value,
@@ -491,7 +534,7 @@ function InputField({
   );
 }
 
-function LocationFields({
+export function LocationFields({
   idPrefix,
   label,
   value,
@@ -524,7 +567,7 @@ function LocationFields({
   );
 }
 
-function TimeFields({
+export function TimeFields({
   idPrefix,
   label,
   value,
@@ -563,7 +606,7 @@ function TimeFields({
   );
 }
 
-function SegmentFields({
+export function SegmentFields({
   segment,
   index,
   onChange,

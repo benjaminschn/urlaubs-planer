@@ -16,6 +16,8 @@ import type {
   TripUpdateInput,
   TripUpdateResult
 } from "./types";
+import { isNetworkAvailable } from "../pwa/network";
+import { useOptionalPwa } from "../pwa/context";
 
 export type TripState =
   | { status: "idle"; trip: null }
@@ -46,6 +48,7 @@ type TripProviderProps = PropsWithChildren<{ gateway: TripGateway | null }>;
 
 export function TripProvider({ children, gateway }: TripProviderProps) {
   const { state: authState } = useAuth();
+  const pwa = useOptionalPwa();
   const [state, setState] = useState<TripState>({ status: "idle", trip: null });
   const [realtimeStatus, setRealtimeStatus] = useState<TripRealtimeStatus>("connecting");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -133,19 +136,31 @@ export function TripProvider({ children, gateway }: TripProviderProps) {
       }
     };
     window.addEventListener("focus", refresh);
-    window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.removeEventListener("focus", refresh);
-      window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [reload, state.status]);
+
+  useEffect(() => pwa?.registerResync("trip", async () => (await reload()) !== null), [pwa, reload]);
 
   const updateTrip = useCallback(
     async (
       input: Omit<TripUpdateInput, "tripId" | "expectedVersion"> & { expectedVersion?: number }
     ): Promise<TripUpdateResult> => {
+      if (!isNetworkAvailable()) {
+        setState((currentState) =>
+          currentState.status === "ready"
+            ? {
+                ...currentState,
+                message:
+                  "Offline: Die Reise wurde nicht gespeichert. Ihre Eingaben bleiben in diesem Formular erhalten."
+              }
+            : currentState
+        );
+        return { kind: "unavailable" };
+      }
       if (isSavingRef.current || !gateway || stateRef.current.status !== "ready") {
         return { kind: "unavailable" };
       }

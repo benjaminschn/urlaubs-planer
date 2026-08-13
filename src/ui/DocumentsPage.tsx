@@ -34,6 +34,8 @@ type Preview = {
 const statusLabels: Record<Document["status"], string> = {
   uploading: "Wird hochgeladen",
   uploaded: "Wird geprüft",
+  verifying: "Wird sicher geprüft",
+  verification_pending: "Prüfung ausstehend",
   available: "Verfügbar",
   upload_failed: "Upload fehlgeschlagen",
   unsupported: "Nicht unterstützt",
@@ -52,7 +54,7 @@ function queueStatusLabel(status: QueueEntry["status"]): string {
 
 export function DocumentsPage() {
   const { navigate } = useRouter();
-  const { state, isRefreshing, isUploading, upload, download, startExtraction } = useDocuments();
+  const { state, isRefreshing, isUploading, upload, retryVerification, download, startExtraction } = useDocuments();
   const [queue, setQueue] = useState<QueueEntry[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -133,6 +135,11 @@ export function DocumentsPage() {
     if (result.kind !== "accepted") setMessage(result.message);
   }
 
+  async function retryDocumentVerification(document: Document) {
+    const result = await retryVerification(document.id);
+    if (result.kind !== "available") setMessage(result.message);
+  }
+
   function newestRun(documentId: string) {
     return state.runs.find((run) => run.documentId === documentId) ?? null;
   }
@@ -158,6 +165,7 @@ export function DocumentsPage() {
             className="visually-hidden"
             type="file"
             multiple
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.docx,.xlsx,.pptx,.eml,.txt,.text,.csv,application/pdf,image/jpeg,image/png,image/webp,image/gif,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,message/rfc822,text/plain,text/csv"
             onChange={handleSelection}
             aria-label="Dateien auswählen"
           />
@@ -210,6 +218,7 @@ export function DocumentsPage() {
                   </div>
                   <div className="document-card-actions">
                     {document.status === "available" ? <button className="secondary-button" type="button" onClick={() => void openDocument(document)}>Original öffnen</button> : null}
+                    {document.status === "verification_pending" ? <button className="secondary-button" type="button" onClick={() => void retryDocumentVerification(document)}>Sicherheitsprüfung erneut versuchen</button> : null}
                     {document.status === "available" ? <button className="primary-button" type="button" onClick={() => void processDocument(document)} disabled={isActive}>{isActive ? "Verarbeitung läuft …" : "Verarbeitung starten"}</button> : null}
                   </div>
                 </article>

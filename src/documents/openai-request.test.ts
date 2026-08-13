@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildOpenAIResponseBody,
+  calculateOpenAICostMicroEur,
   dereferenceJsonSchema,
+  extractOpenAIResponseAccounting,
   extractOpenAIStructuredText,
   openAIFilePurpose,
   openAIInputKind,
@@ -152,5 +154,36 @@ describe("OpenAI document input adapter", () => {
       { type: "function_call" },
       { type: "message", content: [{ type: "output_text", text: "one" }] }
     ] })).toBeNull();
+  });
+
+  it("extracts provider accounting independently from structured output validity", () => {
+    const body = {
+      id: "resp_accounted",
+      usage: { input_tokens: 125, output_tokens: 40, input_tokens_details: { cached_tokens: 25 } },
+      output: [{ type: "message", content: [{ type: "output_text", text: "not-json" }] }]
+    };
+    expect(extractOpenAIResponseAccounting(body)).toEqual({
+      requestId: "resp_accounted",
+      inputTokens: 125,
+      cachedInputTokens: 25,
+      outputTokens: 40,
+      usage: body.usage
+    });
+    expect(calculateOpenAICostMicroEur(
+      { inputTokens: 125, cachedInputTokens: 25, outputTokens: 40 },
+      0.25,
+      0.05,
+      2
+    )).toBe(107);
+  });
+
+  it("rejects missing usage and invalid pricing instead of silently charging zero", () => {
+    expect(extractOpenAIResponseAccounting({ id: "resp_missing", output: [] })).toBeNull();
+    expect(calculateOpenAICostMicroEur(
+      { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 },
+      Number.NaN,
+      0,
+      1
+    )).toBeNull();
   });
 });

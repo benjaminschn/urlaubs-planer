@@ -10,7 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@runtime-auth": path.resolve(projectRoot, "src/auth/runtime.ts"),
-      "@runtime-services": path.resolve(projectRoot, "src/runtime/services.ts")
+      "@runtime-services": path.resolve(projectRoot, "src/runtime/services.ts"),
+      "virtual:pwa-register": path.resolve(projectRoot, "src/test/pwa-register.ts")
     }
   },
   test: {

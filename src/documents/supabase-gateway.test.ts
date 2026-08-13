@@ -26,4 +26,26 @@ describe("Supabase-Dokumentadapter", () => {
       message: "Die Verarbeitung ist derzeit nicht verfügbar."
     });
   });
+
+  it("speichert Feldkorrekturen append-only vor dem bestätigbaren kanonischen Snapshot", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: [{ operation_status: "updated", candidate_id: "candidate-1", version: 5 }], error: null });
+    const gateway = createSupabaseDocumentGateway({ rpc } as never);
+    const payload = { event_type_code: "activity", title: "Neu" };
+
+    const result = await gateway.saveCandidateReview({
+      candidateId: "candidate-1",
+      expectedVersion: 3,
+      payload,
+      corrections: [{ fieldPath: "title", occurrenceKey: "", operation: "set", newValue: "Neu" }]
+    });
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("apply_candidate_review", expect.objectContaining({
+      p_expected_version: 3,
+      p_corrections: [{ field_path: "title", occurrence_key: "", operation: "set", new_value: "Neu" }],
+      p_canonical_payload: payload
+    }));
+    expect(result).toEqual({ kind: "updated", candidateId: "candidate-1", version: 5 });
+  });
 });

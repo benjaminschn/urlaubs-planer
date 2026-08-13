@@ -12,11 +12,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // autoUpdate: new deploys replace the controlling SW immediately.
-      // "prompt" was used without an update UI, so clients stayed on old precache forever.
-      registerType: "autoUpdate",
-      injectRegister: "auto",
-      includeAssets: ["icon.svg", "offline.html"],
+      registerType: "prompt",
+      injectRegister: null,
+      includeAssets: ["icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "offline.html"],
       manifest: {
         name: "Gemeinsamer Reiseplaner",
         short_name: "Reiseplaner",
@@ -29,6 +27,18 @@ export default defineConfig({
         theme_color: "#0f4c5c",
         icons: [
           {
+            src: "./icon-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any"
+          },
+          {
+            src: "./icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any maskable"
+          },
+          {
             src: "./icon.svg",
             sizes: "any",
             type: "image/svg+xml",
@@ -37,12 +47,13 @@ export default defineConfig({
         ]
       },
       workbox: {
-        navigateFallback: "offline.html",
+        // Only the public application shell is available offline. Private/API responses are never runtime-cached.
+        navigateFallback: "index.html",
         navigateFallbackDenylist: [/^\/supabase\//, /^\/rest\//, /^\/functions\//],
         runtimeCaching: [],
         cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true
+        clientsClaim: false,
+        skipWaiting: false
       },
       devOptions: {
         enabled: false

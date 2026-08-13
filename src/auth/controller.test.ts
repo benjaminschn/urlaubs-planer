@@ -27,6 +27,21 @@ describe("Auth-Controller", () => {
     expect(JSON.stringify(controller.getState())).not.toContain("not found");
   });
 
+  it("sendet offline keine Zugangsdaten und erklärt den blockierten Login", async () => {
+    const fake = createFakeGateway();
+    const controller = createAuthController(fake.gateway);
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+
+    try {
+      await controller.signIn("person@example.test", "password");
+
+      expect(fake.calls.signIn).toBe(0);
+      expect(controller.getState()).toMatchObject({ status: "signed_out", message: expect.stringMatching(/Offline/) });
+    } finally {
+      Reflect.deleteProperty(navigator, "onLine");
+    }
+  });
+
   it("verlangt einen TOTP-Code und bereinigt den Zustand beim Logout", async () => {
     const fake = createFakeGateway();
     const controller = createAuthController(fake.gateway);

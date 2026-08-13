@@ -115,4 +115,40 @@ describe("private Dokumente", () => {
     await user.click(screen.getByRole("button", { name: "Ereignis bestätigen" }));
     expect(window.location.hash).toBe("#/events/77777777-7777-4777-8777-777777777777");
   });
+
+  it("blockiert eine lokale Korrektur, wenn Realtime den Bearbeitungsstand geändert hat", async () => {
+    const { user, documents } = await signInAndOpenDocuments();
+    await user.upload(screen.getByLabelText("Dateien auswählen"), new File(["%PDF-1.7\npassive\n%%EOF"], "konflikt.pdf", { type: "application/pdf" }));
+    await user.click(await screen.findByRole("button", { name: "Verarbeitung starten" }));
+    await user.click(await screen.findByRole("button", { name: "Jetzt kontrollieren" }));
+    await user.clear(await screen.findByLabelText("Titel *"));
+    await user.type(screen.getByLabelText("Titel *"), "Mein lokaler Titel");
+    const candidate = documents.getExtractionRuns()[0].candidates[0];
+    const remotePayload = {
+      event_type_code: "accommodation", title: "Server-Titel", booking_status: "unknown",
+      start_time: { local_date: "2026-09-01", local_time: null, precision: "date_only", iana_time_zone: null, utc_offset_minutes: null, instant_utc: null, resolution_status: "date_only" },
+      end_time: null, locations: { main: null, start: null, end: null },
+      common_details: { provider_name: "", booking_platform_name: "", management_url: "", booking_date: null, notes: "Andere Änderung", references: [], travelers: [], provider_contacts: [], price: {}, cancellation_deadline: null, cancellation_conditions: "", additional_attributes: [] },
+      type_details: {}, segments: []
+    };
+    documents.mutateCandidateExternally(candidate.id, remotePayload);
+    expect(await screen.findByText(/zwischenzeitlich geändert/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Korrekturen speichern" }));
+    expect(await screen.findByText(/zum Schutz der anderen Änderung blockiert/)).toBeInTheDocument();
+    expect(documents.getExtractionRuns()[0].candidates[0].canonicalPayload).toEqual(remotePayload);
+  });
+
+  it("verknüpft Validierungsfehler mit dem Feld und fokussiert es", async () => {
+    const { user } = await signInAndOpenDocuments();
+    await user.upload(screen.getByLabelText("Dateien auswählen"), new File(["%PDF-1.7\npassive\n%%EOF"], "fehler.pdf", { type: "application/pdf" }));
+    await user.click(await screen.findByRole("button", { name: "Verarbeitung starten" }));
+    await user.click(await screen.findByRole("button", { name: "Jetzt kontrollieren" }));
+    const title = await screen.findByLabelText("Titel *");
+    await user.clear(title);
+    await user.click(screen.getByRole("button", { name: "Korrekturen speichern" }));
+    await waitFor(() => expect(title).toHaveFocus());
+    expect(title).toHaveAttribute("aria-invalid", "true");
+    expect(title).toHaveAttribute("aria-describedby", "candidate-validation-summary");
+    expect(screen.getByRole("button", { name: "Geben Sie einen Ereignistitel ein." })).toBeInTheDocument();
+  });
 });

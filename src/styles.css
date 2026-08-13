@@ -153,6 +153,76 @@ a:focus-visible,
   color: var(--color-muted);
 }
 
+.pwa-status-stack {
+  position: fixed;
+  z-index: 200;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: 0.75rem;
+  left: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+  width: min(calc(100% - 1.5rem), 44rem);
+  margin: 0 auto;
+  pointer-events: none;
+}
+
+.pwa-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+}
+
+.pwa-banner strong,
+.pwa-banner span {
+  display: block;
+}
+
+.pwa-banner span {
+  margin-top: 0.15rem;
+}
+
+.pwa-banner-warning {
+  background: var(--color-warning-bg);
+  border-color: #d7b36a;
+}
+
+.pwa-update-banner > div:first-child {
+  flex: 1;
+}
+
+.pwa-banner-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+
+.pwa-banner-actions .primary-button,
+.pwa-banner-actions .secondary-button {
+  width: auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 36rem) {
+  .pwa-banner,
+  .pwa-banner-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pwa-banner-actions .primary-button,
+  .pwa-banner-actions .secondary-button {
+    width: 100%;
+  }
+}
+
 .stack-gap {
   margin-top: 1rem;
 }

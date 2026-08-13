@@ -7,6 +7,8 @@ export const MAX_TRIP_DOCUMENTS = 50;
 export const DOCUMENT_STATUSES = [
   "uploading",
   "uploaded",
+  "verifying",
+  "verification_pending",
   "available",
   "upload_failed",
   "unsupported",
@@ -128,13 +130,26 @@ export type CandidateMutationResult =
   | { kind: "conflict"; candidateId: string; version: number; message: string }
   | { kind: "validation" | "limit" | "forbidden" | "unavailable"; message: string; code?: string };
 
+export type CandidateCorrectionInput = {
+  fieldPath: string;
+  occurrenceKey: string;
+  operation: "set" | "remove" | "add_occurrence" | "remove_occurrence" | "reorder";
+  newValue: unknown;
+};
+
 export type DocumentGateway = {
   listDocuments: (tripId: string) => Promise<DocumentLoadResult>;
   uploadDocument: (input: DocumentUploadInput) => Promise<DocumentUploadResult>;
+  retryVerification: (input: { tripId: string; documentId: string }) => Promise<DocumentUploadResult>;
   downloadDocument: (input: { tripId: string; documentId: string }) => Promise<DocumentDownloadResult>;
   listExtractions: (tripId: string) => Promise<ExtractionLoadResult>;
   startExtraction: (input: { documentId: string; idempotencyKey: string }) => Promise<ExtractionStartResult>;
-  saveCandidateReview: (input: { candidateId: string; expectedVersion: number; payload: Record<string, unknown> }) => Promise<CandidateMutationResult>;
+  saveCandidateReview: (input: {
+    candidateId: string;
+    expectedVersion: number;
+    payload: Record<string, unknown>;
+    corrections?: CandidateCorrectionInput[];
+  }) => Promise<CandidateMutationResult>;
   discardCandidate: (input: { candidateId: string; expectedVersion: number }) => Promise<CandidateMutationResult>;
   confirmCandidate: (input: { candidateId: string; expectedVersion: number; idempotencyKey: string; payload: Record<string, unknown> }) => Promise<CandidateMutationResult>;
   subscribeToDocuments: (options: {

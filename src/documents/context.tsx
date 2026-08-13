@@ -12,6 +12,7 @@ import { useAuth } from "../auth/context";
 import { useTrip } from "../trip/context";
 import type {
   CandidateMutationResult,
+  CandidateCorrectionInput,
   Document,
   DocumentDownloadResult,
   DocumentGateway,
@@ -23,6 +24,8 @@ import type {
   ExtractionCandidate
 } from "./types";
 import { documentErrorMessage } from "./validation";
+import { isNetworkAvailable, offlineActionMessage } from "../pwa/network";
+import { useOptionalPwa } from "../pwa/context";
 
 export type DocumentState =
   | { status: "idle" | "loading" | "disabled"; documents: Document[]; runs: ExtractionRun[]; message?: string }
@@ -36,10 +39,16 @@ type DocumentContextValue = {
   isUploading: boolean;
   reload: () => Promise<Document[]>;
   upload: (input: Omit<DocumentUploadInput, "tripId">) => Promise<DocumentUploadResult>;
+  retryVerification: (documentId: string) => Promise<DocumentUploadResult>;
   download: (documentId: string) => Promise<DocumentDownloadResult>;
   startExtraction: (documentId: string) => Promise<ExtractionStartResult>;
   getCandidate: (candidateId: string) => { candidate: ExtractionCandidate; document: Document } | null;
-  saveCandidateReview: (candidateId: string, expectedVersion: number, payload: Record<string, unknown>) => Promise<CandidateMutationResult>;
+  saveCandidateReview: (
+    candidateId: string,
+    expectedVersion: number,
+    payload: Record<string, unknown>,
+    corrections?: CandidateCorrectionInput[]
+  ) => Promise<CandidateMutationResult>;
   discardCandidate: (candidateId: string, expectedVersion: number) => Promise<CandidateMutationResult>;
   confirmCandidate: (candidateId: string, expectedVersion: number, payload: Record<string, unknown>, idempotencyKey: string) => Promise<CandidateMutationResult>;
 };
@@ -51,6 +60,7 @@ type ProviderProps = PropsWithChildren<{ gateway: DocumentGateway | null }>;
 
 export function DocumentProvider({ children, gateway }: ProviderProps) {
   const { state: authState } = useAuth();
+  const pwa = useOptionalPwa();
   const { state: tripState } = useTrip();
   const [state, setState] = useState<DocumentState>({ status: "idle", documents: [], runs: [] });
   const [realtimeStatus, setRealtimeStatus] = useState<DocumentRealtimeStatus>("connecting");
@@ -58,6 +68,7 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
   const [activeUploads, setActiveUploads] = useState(0);
   const requestNumber = useRef(0);
   const stateRef = useRef(state);
+  const lastReloadSucceeded = useRef(false);
   stateRef.current = state;
   const activeUserId = authState.status === "authenticated" ? authState.user.id : null;
   const trip = tripState.status === "ready" ? tripState.trip : null;
@@ -72,9 +83,11 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
     if (request !== requestNumber.current) return [];
     setIsRefreshing(false);
     if (result.kind === "ready" && extractionResult.kind === "ready") {
+      lastReloadSucceeded.current = true;
       setState({ status: "ready", documents: result.documents, runs: extractionResult.runs });
       return result.documents;
     }
+    lastReloadSucceeded.current = false;
     if (currentState.status === "ready" || currentState.status === "error") {
       setState({ status: "ready", documents: currentState.documents, runs: currentState.runs, message: loadErrorMessage });
       return currentState.documents;
@@ -111,17 +124,23 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
       if (document.visibilityState === "visible") refresh();
     };
     window.addEventListener("focus", refresh);
-    window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("focus", refresh);
-      window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [reload, state.status]);
 
+  useEffect(() => pwa?.registerResync("documents", async () => {
+    await reload();
+    return lastReloadSucceeded.current;
+  }), [pwa, reload]);
+
   const upload = useCallback(
     async (input: Omit<DocumentUploadInput, "tripId">): Promise<DocumentUploadResult> => {
+      if (!isNetworkAvailable()) {
+        return { kind: "unavailable", message: offlineActionMessage };
+      }
       if (!gateway || !trip || (stateRef.current.status !== "ready" && stateRef.current.status !== "error")) {
         return { kind: "unavailable", message: documentErrorMessage("unknown") };
       }
@@ -152,14 +171,26 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
 
   const download = useCallback(
     (documentId: string) => {
+      if (!isNetworkAvailable()) {
+        return Promise.resolve({ kind: "unavailable", message: offlineActionMessage } satisfies DocumentDownloadResult);
+      }
       if (!gateway || !trip) return Promise.resolve({ kind: "unavailable", message: documentErrorMessage("unknown") } satisfies DocumentDownloadResult);
       return gateway.downloadDocument({ tripId: trip.id, documentId });
     },
     [gateway, trip]
   );
 
+  const retryVerification = useCallback(async (documentId: string): Promise<DocumentUploadResult> => {
+    if (!isNetworkAvailable()) return { kind: "unavailable", message: offlineActionMessage };
+    if (!gateway || !trip) return { kind: "unavailable", message: documentErrorMessage("verification_unavailable") };
+    const result = await gateway.retryVerification({ tripId: trip.id, documentId });
+    await reload();
+    return result;
+  }, [gateway, reload, trip]);
+
   const startExtraction = useCallback(
     async (documentId: string): Promise<ExtractionStartResult> => {
+      if (!isNetworkAvailable()) return { kind: "unavailable", message: offlineActionMessage };
       if (!gateway || !trip) return { kind: "unavailable", message: "Die Verarbeitung ist derzeit nicht verfügbar." };
       const result = await gateway.startExtraction({ documentId, idempotencyKey: crypto.randomUUID() });
       if (result.kind === "accepted") {
@@ -186,14 +217,16 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
     return null;
   }, [state.documents, state.runs]);
 
-  const saveCandidateReview = useCallback(async (candidateId: string, expectedVersion: number, payload: Record<string, unknown>) => {
+  const saveCandidateReview = useCallback(async (candidateId: string, expectedVersion: number, payload: Record<string, unknown>, corrections?: CandidateCorrectionInput[]) => {
+    if (!isNetworkAvailable()) return { kind: "unavailable", message: offlineActionMessage } satisfies CandidateMutationResult;
     if (!gateway) return { kind: "unavailable", message: "Der Entwurf konnte nicht gespeichert werden." } satisfies CandidateMutationResult;
-    const result = await gateway.saveCandidateReview({ candidateId, expectedVersion, payload });
+    const result = await gateway.saveCandidateReview({ candidateId, expectedVersion, payload, corrections });
     await reload();
     return result;
   }, [gateway, reload]);
 
   const discardCandidate = useCallback(async (candidateId: string, expectedVersion: number) => {
+    if (!isNetworkAvailable()) return { kind: "unavailable", message: offlineActionMessage } satisfies CandidateMutationResult;
     if (!gateway) return { kind: "unavailable", message: "Der Entwurf konnte nicht verworfen werden." } satisfies CandidateMutationResult;
     const result = await gateway.discardCandidate({ candidateId, expectedVersion });
     await reload();
@@ -201,6 +234,7 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
   }, [gateway, reload]);
 
   const confirmCandidate = useCallback(async (candidateId: string, expectedVersion: number, payload: Record<string, unknown>, idempotencyKey: string) => {
+    if (!isNetworkAvailable()) return { kind: "unavailable", message: offlineActionMessage } satisfies CandidateMutationResult;
     if (!gateway) return { kind: "unavailable", message: "Der Speicherstatus konnte nicht bestätigt werden." } satisfies CandidateMutationResult;
     const result = await gateway.confirmCandidate({ candidateId, expectedVersion, payload, idempotencyKey });
     await reload();
@@ -208,8 +242,8 @@ export function DocumentProvider({ children, gateway }: ProviderProps) {
   }, [gateway, reload]);
 
   const value = useMemo<DocumentContextValue>(
-    () => ({ state, realtimeStatus, isRefreshing, isUploading: activeUploads > 0, reload, upload, download, startExtraction, getCandidate, saveCandidateReview, discardCandidate, confirmCandidate }),
-    [activeUploads, confirmCandidate, discardCandidate, download, getCandidate, isRefreshing, realtimeStatus, reload, saveCandidateReview, startExtraction, state, upload]
+    () => ({ state, realtimeStatus, isRefreshing, isUploading: activeUploads > 0, reload, upload, retryVerification, download, startExtraction, getCandidate, saveCandidateReview, discardCandidate, confirmCandidate }),
+    [activeUploads, confirmCandidate, discardCandidate, download, getCandidate, isRefreshing, realtimeStatus, reload, retryVerification, saveCandidateReview, startExtraction, state, upload]
   );
   return <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>;
 }

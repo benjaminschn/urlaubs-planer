@@ -178,7 +178,7 @@ function mapDocument(value: unknown): Document | null {
   ) {
     return null;
   }
-  const validStatuses = ["uploading", "uploaded", "available", "upload_failed", "unsupported", "invalid", "deleted"];
+  const validStatuses = ["uploading", "uploaded", "verifying", "verification_pending", "available", "upload_failed", "unsupported", "invalid", "deleted"];
   if (!validStatuses.includes(row.status)) return null;
   return {
     id: row.id,
@@ -255,6 +255,21 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
     return error ? null : mapDocument(data);
   }
 
+  async function verifyExistingDocument(tripId: string, documentId: string): Promise<DocumentUploadResult> {
+    const { error: verificationError } = await client.functions.invoke("verify-document-upload", {
+      body: { document_id: documentId }
+    });
+    const verifiedDocument = await getDocument(tripId, documentId);
+    if (verifiedDocument?.status === "available") return { kind: "available", document: verifiedDocument };
+    if (verifiedDocument && ["unsupported", "invalid", "upload_failed"].includes(verifiedDocument.status)) {
+      return { kind: "failed", document: verifiedDocument, message: documentErrorMessage(verifiedDocument.errorCode), code: verifiedDocument.errorCode ?? undefined };
+    }
+    if (verifiedDocument?.status === "verification_pending" || verificationError) {
+      return { kind: "unavailable", message: documentErrorMessage("verification_unavailable") };
+    }
+    return { kind: "unavailable", message: documentErrorMessage("verification_unavailable") };
+  }
+
   return {
     async listDocuments(tripId: string): Promise<DocumentLoadResult> {
       const { data, error } = await client
@@ -320,16 +335,11 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
           : { kind: "failed", document: uploadDocument, message: documentErrorMessage("upload_failed"), code: "upload_failed" };
       }
 
-      const { error: verificationError } = await client.functions.invoke("verify-document-upload", {
-        body: { document_id: reservedDocument.id }
-      });
-      const verifiedDocument = await getDocument(input.tripId, reservedDocument.id);
-      if (verifiedDocument?.status === "available") return { kind: "available", document: verifiedDocument };
-      if (verifiedDocument && ["unsupported", "invalid", "upload_failed"].includes(verifiedDocument.status)) {
-        return { kind: "failed", document: verifiedDocument, message: documentErrorMessage(verifiedDocument.errorCode), code: verifiedDocument.errorCode ?? undefined };
-      }
-      if (verificationError) return { kind: "unavailable", message: documentErrorMessage("verification_unavailable") };
-      return { kind: "unavailable", message: documentErrorMessage("verification_unavailable") };
+      return verifyExistingDocument(input.tripId, reservedDocument.id);
+    },
+
+    retryVerification(input) {
+      return verifyExistingDocument(input.tripId, input.documentId);
     },
 
     async listExtractions(tripId: string): Promise<ExtractionLoadResult> {
@@ -429,13 +439,16 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
     },
 
     async saveCandidateReview(input): Promise<CandidateMutationResult> {
-      const { data, error } = await client.rpc("apply_candidate_correction", {
+      const { data, error } = await client.rpc("apply_candidate_review", {
         p_candidate_id: input.candidateId,
         p_expected_version: input.expectedVersion,
-        p_field_path: "$canonical_payload",
-        p_occurrence_key: "",
-        p_operation: "set",
-        p_new_value: input.payload
+        p_corrections: (input.corrections ?? []).map((correction) => ({
+          field_path: correction.fieldPath,
+          occurrence_key: correction.occurrenceKey,
+          operation: correction.operation,
+          new_value: correction.newValue
+        })),
+        p_canonical_payload: input.payload
       });
       return mapCandidateMutation(data, error);
     },

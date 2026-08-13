@@ -14,6 +14,10 @@ import type {
   AuthState,
   AuthUser
 } from "./types";
+import { isNetworkAvailable } from "../pwa/network";
+
+const offlineAuthMessage =
+  "Offline: Die Anmeldung wurde nicht ausgeführt. Stellen Sie die Verbindung wieder her und versuchen Sie es erneut.";
 
 export type AuthController = {
   getState: () => AuthState;
@@ -164,6 +168,10 @@ export function createAuthController(gateway: AuthGateway): AuthController {
     if (signInPromise || mfaPromise || signOutPromise) {
       return signInPromise ?? Promise.resolve();
     }
+    if (!isNetworkAvailable()) {
+      dispatch({ type: "AUTH_FAILURE", message: offlineAuthMessage });
+      return;
+    }
 
     signInPromise = (async () => {
       dispatch({ type: "START_SIGN_IN" });
@@ -194,6 +202,10 @@ export function createAuthController(gateway: AuthGateway): AuthController {
 
   async function verifyMfa(code: string): Promise<void> {
     if (mfaPromise || signInPromise || signOutPromise || state.status !== "mfa_required") {
+      return;
+    }
+    if (!isNetworkAvailable()) {
+      dispatch({ type: "MFA_FAILURE", message: offlineAuthMessage });
       return;
     }
     const { factorId, challengeId } = state;

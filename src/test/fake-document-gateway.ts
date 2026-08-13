@@ -142,6 +142,17 @@ export function createFakeDocumentGateway(options: { tripId?: string; documents?
         activeUploads = Math.max(0, activeUploads - 1);
       }
     },
+    async retryVerification(input) {
+      const documents = readDocuments();
+      const document = documents.find((candidate) => candidate.id === input.documentId && candidate.tripId === input.tripId);
+      if (!document || document.status !== "verification_pending") {
+        return { kind: "unavailable", message: documentErrorMessage("verification_unavailable") };
+      }
+      const available = { ...document, status: "available" as const, errorCode: null, uploadedAt: new Date().toISOString(), version: document.version + 1 };
+      writeDocuments(documents.map((candidate) => candidate.id === available.id ? available : candidate));
+      signal();
+      return { kind: "available", document: available };
+    },
     async downloadDocument(input) {
       calls.download += 1;
       const document = readDocuments().find((candidate) => candidate.id === input.documentId && candidate.tripId === input.tripId);
@@ -196,11 +207,11 @@ export function createFakeDocumentGateway(options: { tripId?: string; documents?
       extractionRuns = extractionRuns.map((run) => ({ ...run, candidates: run.candidates.map((candidate) => {
         if (candidate.id !== input.candidateId || candidate.version !== input.expectedVersion || candidate.status !== "draft") return candidate;
         updated = true;
-        return { ...candidate, canonicalPayload: input.payload, version: candidate.version + 1 };
+        return { ...candidate, canonicalPayload: input.payload, version: candidate.version + (input.corrections?.length ?? 0) + 1 };
       }) }));
       signal();
       return updated
-        ? { kind: "updated", candidateId: input.candidateId, version: input.expectedVersion + 1 }
+        ? { kind: "updated", candidateId: input.candidateId, version: input.expectedVersion + (input.corrections?.length ?? 0) + 1 }
         : { kind: "conflict", candidateId: input.candidateId, version: input.expectedVersion, message: "Der Entwurf wurde zwischenzeitlich geändert." };
     },
     async discardCandidate(input) {
@@ -240,6 +251,16 @@ export function createFakeDocumentGateway(options: { tripId?: string; documents?
     gateway,
     calls,
     getDocuments: () => readDocuments(),
+    getExtractionRuns: () => extractionRuns,
+    mutateCandidateExternally(candidateId: string, payload: Record<string, unknown>) {
+      extractionRuns = extractionRuns.map((run) => ({
+        ...run,
+        candidates: run.candidates.map((candidate) => candidate.id === candidateId
+          ? { ...candidate, canonicalPayload: payload, version: candidate.version + 1 }
+          : candidate)
+      }));
+      signal();
+    },
     emitSignal: () => signal(),
     setRealtimeStatus: (status: DocumentRealtimeStatus) => {
       for (const listener of statusListeners) listener(status);
