@@ -6,7 +6,16 @@ enabled = true
 [realtime]
 enabled = true
 
+[storage.vector]
+enabled = false
+
 [functions.start-document-extraction]
+verify_jwt = true
+
+[functions.process-document-extractions]
+verify_jwt = false
+
+[functions.verify-document-upload]
 verify_jwt = true
 
 [auth]
@@ -20,7 +29,11 @@ enable_signup = false
 enable_anonymous_sign_ins = false
 
 [auth.email]
-enable_signup = true
+enable_signup = false
+
+[auth.rate_limit]
+sign_in_sign_ups = 5
+token_verifications = 15
 
 [auth.mfa]
 max_enrolled_factors = 1
@@ -28,7 +41,3 @@ max_enrolled_factors = 1
 [auth.mfa.totp]
 enroll_enabled = false
 verify_enabled = true
-
-[auth.sessions]
-timebox = "720h"
-inactivity_timeout = "24h"

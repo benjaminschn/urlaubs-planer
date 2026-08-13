@@ -1,6 +1,14 @@
 export type OpenAIInputKind = "file" | "image";
 type RecordLike = Record<string, unknown>;
 
+export type OpenAIResponseAccounting = {
+  requestId: string;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  usage: RecordLike;
+};
+
 const imageContentTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 export function openAIInputKind(contentType: string): OpenAIInputKind {
@@ -127,6 +135,39 @@ export function extractOpenAIStructuredText(body: unknown): { text: string; requ
   if (part?.type !== "output_text" || typeof part.text !== "string") return null;
   const usage = response.usage && typeof response.usage === "object" && !Array.isArray(response.usage) ? response.usage as RecordLike : null;
   return { text: part.text, requestId: typeof response.id === "string" ? response.id : null, usage };
+}
+
+export function extractOpenAIResponseAccounting(body: unknown): OpenAIResponseAccounting | null {
+  const response = body && typeof body === "object" && !Array.isArray(body) ? body as RecordLike : null;
+  const usage = response?.usage && typeof response.usage === "object" && !Array.isArray(response.usage)
+    ? response.usage as RecordLike
+    : null;
+  const inputTokens = usage?.input_tokens;
+  const outputTokens = usage?.output_tokens;
+  const inputDetails = usage?.input_tokens_details && typeof usage.input_tokens_details === "object" && !Array.isArray(usage.input_tokens_details)
+    ? usage.input_tokens_details as RecordLike : null;
+  const cachedInputTokens = inputDetails?.cached_tokens ?? 0;
+  if (!response || typeof response.id !== "string" || response.id.length < 1
+    || !Number.isSafeInteger(inputTokens) || (inputTokens as number) < 0
+    || !Number.isSafeInteger(cachedInputTokens) || (cachedInputTokens as number) < 0 || (cachedInputTokens as number) > (inputTokens as number)
+    || !Number.isSafeInteger(outputTokens) || (outputTokens as number) < 0) return null;
+  return { requestId: response.id, inputTokens: inputTokens as number, cachedInputTokens: cachedInputTokens as number, outputTokens: outputTokens as number, usage: usage as RecordLike };
+}
+
+export function calculateOpenAICostMicroEur(
+  accounting: Pick<OpenAIResponseAccounting, "inputTokens" | "cachedInputTokens" | "outputTokens">,
+  inputMicroEurPerToken: number,
+  cachedInputMicroEurPerToken: number,
+  outputMicroEurPerToken: number
+): number | null {
+  if (!Number.isFinite(inputMicroEurPerToken) || inputMicroEurPerToken < 0
+    || !Number.isFinite(cachedInputMicroEurPerToken) || cachedInputMicroEurPerToken < 0
+    || !Number.isFinite(outputMicroEurPerToken) || outputMicroEurPerToken < 0
+    || accounting.cachedInputTokens < 0 || accounting.cachedInputTokens > accounting.inputTokens) return null;
+  const cost = (accounting.inputTokens - accounting.cachedInputTokens) * inputMicroEurPerToken
+    + accounting.cachedInputTokens * cachedInputMicroEurPerToken
+    + accounting.outputTokens * outputMicroEurPerToken;
+  return Number.isSafeInteger(Math.ceil(cost)) ? Math.ceil(cost) : null;
 }
 
 export function buildOpenAIResponseBody(options: {
