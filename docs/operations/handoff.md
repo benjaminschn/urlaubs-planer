@@ -5,7 +5,7 @@
 
 **Produkt:** Privater Reiseplaner für zwei Personen (kein öffentlicher Dienst).
 **Produktion:** GitHub Pages `https://benjaminschn.github.io/urlaubs-planer/` und Supabase `pvqawohdklzxpruodydy`.
-**Branch:** `codex/implementation-review-handoff` (kein Auto-Deploy). `origin/master` ist älter und löst Deployments aus.
+**Release:** `master` bei Commit `5336908`; Backend und Pages wurden durch CI erfolgreich ausgerollt.
 
 Produktdefinition und Schnitte: [Roadmap](../roadmap.md).
 Deploy und Secrets: [Deployment](deployment.md).
@@ -13,7 +13,7 @@ Sicherheitspolitik: [Threat Model](../security/threat-model.md).
 
 ## 1. Urteil
 
-Der Code für den privaten MVP ist lokal grün. Produktion hat den neuen Verifier und die Recovery-/Cleanup-Migrationen noch nicht. Die erforderlichen Function-Secret-Namen sind in Supabase vorhanden; der optionale Cached-Input-Preis ist weiterhin nicht erforderlich. Der Release-Blocker ist jetzt der Push auf `master`, damit CI die sechs ausstehenden Migrationen und die zugehörigen Functions ausrollt.
+Der private MVP ist ausgerollt und die automatischen Produktionsprüfungen sind grün. CI-Lauf `31872219292` (Verify, Supabase-Deploy und Pages) sowie Production-Health-Lauf `31872983402` waren erfolgreich. Projektstatus ist `ACTIVE_HEALTHY`; alle 21 Migrationen sind angewendet, es gibt keine ausstehenden Migrationen. Die erforderlichen Worker-Secret-Namen sind in Supabase vorhanden; der optionale Cached-Input-Preis ist weiterhin nicht erforderlich.
 
 Bewusste Vereinfachung für zwei vertrauenswürdige Konten:
 
@@ -26,11 +26,11 @@ Unverändert verbindlich: keine Secrets im öffentlichen Repo oder in `VITE_*`, 
 
 ## 2. Was im Repository steht
 
-Arbeitsbaum auf diesem Branch enthält die Implementierung **uncommittet**. Nicht nach `master` mergen, bevor der Release-Commit geprüft und bewusst gepusht wird.
+Der dokumentierte Produktionsstand entspricht Commit `5336908` auf `master`. Weitere Änderungen müssen über den bestehenden CI-Deploypfad ausgerollt werden.
 
-Bereits in den lokalen `master`-Commits vor `origin/master`: Extraktions-Worker, Kandidateneditor, PWA-Resync, erweiterte CI.
+Im Release enthalten: Extraktions-Worker, Kandidateneditor, PWA-Resync und erweiterte CI.
 
-Zusätzlich auf diesem Branch:
+Weitere enthaltene Betriebslogik:
 
 - Migrationen `20260813201059` / `20260813201223` nach `20260813231000` / `20260813232000` umbenannt, damit `supabase db push --linked --dry-run` ohne `--include-all` läuft.
 - Verifier-Recovery: Reaper per Minuten-Cron, Recover vor Reserve/Claim, UI-Retry für `verifying` und `verification_pending`, terminal `invalid` / `verification_attempts_exhausted` nach 20 Versuchen.
@@ -50,58 +50,36 @@ Zusätzlich auf diesem Branch:
 | pgTAP | 13 Dateien / 305 Assertions |
 | DB-Lint / Advisors lokal | private/public ohne Schemafehler; Advisors ohne Error-Level-Fund, erwartete Info-Warnungen für bereits dokumentierte FK-/Index-/private-RLS-Themen |
 | Playwright Chromium + WebKit | 24/24 |
-| `supabase db push --linked --dry-run` | würde sechs ausstehende Migrationen anwenden, kein `LegacyDbPushMissingRemoteError` |
+| Verknüpfte Produktionsmigrationen | 21 angewendet, 0 ausstehend |
 
 Nicht blockierende Build-Warnung: Hauptchunk ~562 KB roh / ~153 KB gzip.
 
-## 4. Produktion (aktueller Stand vor Release)
+## 4. Produktion (aktueller Stand)
 
 Die Produktionskonfiguration ist eingerichtet: E-Mail-/Passwort-Anmeldung ist für administrativ angelegte Konten aktiviert, öffentliche Registrierung bleibt deaktiviert. Beide persönlichen Konten sind Reisemitglieder; beide haben je einen verifizierten TOTP-Faktor (2 verifiziert, 0 unverifiziert). Weitere TOTP-Einschreibung ist deaktiviert, Verifikation bleibt aktiviert.
 
-Alle erforderlichen Function-Secret-Namen sind vorhanden (ihre Werte bleiben geheim); `OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN` bleibt optional. Es ist noch kein Deployment dieses Branches erfolgt.
+Alle erforderlichen Function- und Worker-Secret-Namen sind vorhanden (ihre Werte bleiben geheim); `OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN` bleibt optional. Die Produktion läuft auf dem Release-Commit `5336908`.
 
-Angewendet bis `20260813230500`.
+Alle 21 Migrationen sind angewendet; `pending = 0`. Projektstatus: `ACTIVE_HEALTHY`.
 
-Noch nicht angewendet:
+Aktive Functions:
 
-- `20260813231000_fence_extraction_calls_and_defer_schedule.sql`
-- `20260813232000_harden_document_verification.sql`
-- `20260813240000_install_extraction_worker_schedule.sql`
-- `20260814152635_recover_document_verification.sql`
-- `20260814152653_document_storage_cleanup_queue.sql`
-- `20260815062125_harden_document_storage_cleanup.sql` (Upload-Failure-Cleanup, Retry-Gate, terminale Cleanup-Fehler)
+- `process-document-extractions` v3
+- `process-document-storage-cleanups` v1
+- `start-document-extraction` v22
+- `verify-document-upload` v5
 
-Aktive Functions: `verify-document-upload` v3 (alte Implementierung), `start-document-extraction` v20, `process-document-extractions` v1. Die sechs ausstehenden Migrationen sowie der neue Verifier und der Cleanup-Worker sind bis zu diesem Release nicht ausgerollt.
+Der erfolgreiche Production-Health-Lauf `31872983402` bestätigte Schema-Fingerprint, Extraktions- und Cleanup-Schedule, Cleanup-Queue-Health, Pages inklusive Manifest (HTTP 200) sowie Auth-Health (HTTP 200). Der E-Mail-Provider ist aktiviert, öffentliche Registrierung deaktiviert; es gibt 2 verifizierte und 0 unverifizierte TOTP-Faktoren.
 
-`OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN` fehlt; es ist optional, der uncached Inputpreis gilt als Fallback.
+`OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN` ist optional; der uncached Inputpreis gilt als Fallback.
 
 ## 5. Nächste Schritte
 
-1. **Erledigt: erforderliche Function-Secret-Namen in Supabase vorhanden** (nicht in GitHub, nicht als `VITE_*`). Dashboard: [Edge Function secrets](https://supabase.com/dashboard/project/pvqawohdklzxpruodydy/functions/secrets).
+1. **Manuelle Smoke-Tests:** Mit einem echten Mobilgerät (iPhone/Safari) und einem Desktop-Browser anmelden, TOTP prüfen, einen repräsentativen Upload durchführen und den vollständigen Ablauf von lokaler Ablehnung bzw. Freigabe über Extraktion, Korrektur und Bestätigung testen.
 
-   | Secret | Bedeutung |
-   | --- | --- |
-   | `APP_ORIGIN` | `https://benjaminschn.github.io/urlaubs-planer/` |
-   | `OPENAI_API_KEY` | privater OpenAI-Schlüssel |
-   | `OPENAI_EXTRACTION_MODEL` | gewähltes Modell |
-   | `OPENAI_EXTRACTION_MAX_OUTPUT_TOKENS` | z. B. `4096` |
-   | `OPENAI_INPUT_MICRO_EUR_PER_TOKEN` | uncached Inputpreis in µEUR |
-   | `OPENAI_OUTPUT_MICRO_EUR_PER_TOKEN` | Outputpreis in µEUR |
-   | `OPENAI_MAX_RUN_COST_MICRO_EUR` | weiche Run-Reservierung, z. B. `500000` = 0,50 EUR |
-   | `OPENAI_PRICING_VERSION` | beliebiges Label, z. B. `2026-08` |
-   | `EXTRACTION_WORKER_TOKEN` | 64 Hex-Zeichen; liegt als GitHub-Repository-Secret vor |
+2. **Synthetischen Ablauf prüfen:** Einen kontrollierten Testlauf für Extraktion, Retry/Recovery und Cleanup ausführen und sicherstellen, dass die Queue nach erfolgreicher Verarbeitung leer bzw. erwartungsgemäß ist. Keine Testdaten mit echten personenbezogenen Inhalten verwenden.
 
-   Optional: `OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN`. Fehlt es, gilt der Inputpreis.
-
-   Die vier Deploy-Secrets (`SUPABASE_ACCESS_TOKEN`, `PRODUCTION_PROJECT_ID`, `PRODUCTION_DB_PASSWORD`, `EXTRACTION_WORKER_TOKEN`) sind als GitHub-Repository-Secrets vorhanden und werden vom Job mit der Umgebung `supabase-production` verwendet; diese Umgebung hat derzeit keine eigenen Secrets.
-
-2. Änderungen auf diesem Branch committen und auf `master` pushen. CI prüft die Secret-**Namen** und rollt dann die sechs Migrationen und Functions aus.
-
-3. **Erledigt: zweites persönliches Produktionskonto mit TOTP angelegt und als Reisemitglied eingetragen.**
-
-4. Nach dem Backend-Deploy einmal real prüfen: Upload, lokale Ablehnung, Extraktion, Korrektur, Bestätigung.
-
-5. Bei Gelegenheit auf iPhone/Safari öffnen. Löschung, Backup-Probe und Pro-Upgrade sind später optional.
+3. **Monitoring fortsetzen:** Die geplanten Production-Health-Läufe und die Cron-/pg_net-Ausführung beobachten; bei Fehlern zuerst Function-Logs, Worker-Ausführung, Schedules und Cleanup-Queue prüfen.
 
 ## 6. Startbefehle
 
@@ -112,4 +90,4 @@ npx supabase migration list --linked
 npx supabase db push --linked --dry-run
 ```
 
-Keine produktiven Migrationen oder Functions von Hand ausrollen, solange CI das Backend-Deploy noch nicht gemacht hat.
+Produktionsmigrationen und Functions weiterhin ausschließlich über CI ausrollen; keine manuellen CLI-Deployments.
