@@ -132,6 +132,12 @@ jobs:
             "update_trip"
           ]'
           advisor_report="$(supabase db advisors --linked --type all --level warn)"
+          advisor_report="$(jq -e '
+            if type == "array" then {results: .}
+            elif type == "object" and (.results | type == "array") then .
+            else error("Unexpected Supabase advisor response shape")
+            end
+          ' <<<"$advisor_report")"
           unexpected="$(jq \
             --argjson allowed "$allowed_definer_functions" \
             '[.results[] | select((
