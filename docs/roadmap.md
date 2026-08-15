@@ -1,36 +1,34 @@
 # Umsetzungsroadmap: Gemeinsamer Reiseplaner
 
-**Status:** Implementierung weit fortgeschritten; MVP noch nicht releasefähig
-**Stand:** 13. August 2026
+**Status:** Privater Zwei-Personen-MVP; Code lokal grün, Backend-Stand in Produktion unvollständig
+**Stand:** 15. August 2026
+**Aktueller Betriebsstand und nächste Schritte:** [Handoff](operations/handoff.md)
 **Grundlagen:** [Produktbrief](product/brief.md), [UX-Flows](ux/flows.md), [Systemarchitektur](architecture/system.md), [Domain-Modell](data/domain-model.md), [Extraktionsvertrag](ai/extraction.md) und [Threat Model](security/threat-model.md)
 
 ## 0. Nachweisbarer Implementierungsstand
 
-Diese Statusübersicht beschreibt den Repository- und Produktionsstand vom 13. August 2026. Die späteren Abschnitte bleiben als verbindliche Definition of Done bestehen; ein Schnitt ist dort bewusst strenger als „Code vorhanden“.
+Diese Tabelle ist die Produktsicht. Git-Stand, Secrets, ausstehende Migrationen und die genaue Fortsetzungsreihenfolge stehen nur im [Handoff](operations/handoff.md). Deploy: [Deployment](operations/deployment.md). Incidents: [Incident- und Datenlebenszyklus](operations/incidents-and-data-lifecycle.md).
 
-| Schnitt | Stand | Nachweis | Noch offen bis Definition of Done |
-| --- | --- | --- | --- |
-| 1 – PWA/Auth/Deployment | Teilweise produktiv | Geschützte Hash-Routen, Passwort/TOTP-Flow, AAL2-Policies, deaktivierte Signups, engere Auth-Ratenlimits, Secret-/Build-Gates und Pages-Deployment sind implementiert. Das pausierte Supabase-Projekt wurde wieder auf `ACTIVE_HEALTHY` gebracht. | Produktion besitzt erst ein aktives Konto mit einem verifizierten TOTP-Faktor; zweites persönliches Konto fehlt. Die geforderten absoluten/Inaktivitäts-Sessionlimits sind im Free-Plan nicht verfügbar. GitHub Pages liefert keine setzbaren CSP-/Clickjacking-Header. Auth-/Recovery- und echtes Geräte-Smoke-Testing fehlen. |
-| 2 – Gemeinsame Reise/Realtime | Implementiert, Produktionsabnahme blockiert | Versionierter Reisekopf, Default-Deny-RLS, Realtime als Invalidierung, Reload-Fallback und Konfliktbehandlung sind in App, Migrationen und Tests vorhanden. | Produktion hat eine statt zwei aktiver Mitgliedschaften; Zwei-Geräte-/Zwei-Konten-Abnahme ist deshalb noch nicht möglich. |
-| 3 – Manuelle Ereignisse/Timeline | Implementiert und automatisiert geprüft | Alle fünf Ereignisarten, gemeinsame/typspezifische Felder, Teilstrecken, Zeitmodell, Revisionen, Soft Delete, Timeline und Konflikte sind implementiert. Historische Produktionsdrift wurde durch Vorwärtsmigrationen behoben; lokale und produktive Spalten, Constraints, Funktionen, Indizes, Policies, RLS-Flags und Trigger stimmen fingerprint-genau überein. | Manuelle iPhone-/Safari- und Produktionsabnahme sowie dokumentierter echter Rollbacknachweis fehlen. |
-| 4 – Privater Dokument-Upload | Technisch erweitert, nicht produktionsbereit | Privater Quarantäne-Bucket, serverseitige Reservierung/Limits, Signatur-/Struktur-/Pixelprüfung, passive PDF/Bild/Text/EML- und DOCX/XLSX/PPTX-Prüfung, ZIP-Bomb/Traversal/aktive-Inhalte-Schutz, SHA-256 und fail-closed Scanner-Vertrag sind implementiert. | Scanneranbieter, Region/Aufbewahrung und `MALWARE_SCAN_URL`/`MALWARE_SCAN_TOKEN` sind nicht entschieden/konfiguriert; neuer Verifier ist deshalb bewusst nicht ausgerollt. Gesondertes Dokumentlöschrecht bleibt fachlich offen. |
-| 5 – Dokumentextraktion | Implementiert, Backend produktiv ausgerollt | Dauerhafte Queue, `SKIP LOCKED`-Claims, 120-s-Leases, maximal drei Versuche, Recovery-Cron, idempotentes Kosten-Ledger, strukturierte Ausgabeprüfung und temporäre Providerdateilöschung sind implementiert; Start liefert `202`. Migrationen, Start-/Worker-Functions, Worker-Credential und minütlicher Cron sind produktiv; ein Cron-HTTP-Aufruf endete nach Deployment mit HTTP 200. | Live-Extraktion mit einer synthetischen repräsentativen Datei und absichtlicher Worker-Unterbrechung fehlt. Preis-Secrets bleiben laufend zu pflegen. |
-| 6 – Kontroll-/Korrekturansicht | Implementiert und automatisiert geprüft | Roh-JSON wurde durch den vollständigen strukturierten Editor für alle fünf Ereignisarten ersetzt; Evidenz, Unsicherheit, Validierung, Konflikt-/Dirty-State und Feldkorrekturen sind abgedeckt. Mehrere Feldkorrekturen und der kanonische Snapshot werden durch eine Batch-RPC atomar append-only geschrieben. | Manuelle Originalvergleichs-Abnahme auf Zielgeräten fehlt. |
-| 7 – Bestätigung/Timeline | Implementiert und DB-geprüft | Kandidatenbestätigung ist serverseitig autorisiert, atomar/idempotent und verknüpft Original und genau ein bestätigtes TravelItem; Replay-/Konflikttests sind vorhanden. | Produktions-Smoke-Test mit beiden Konten und synthetischem Dokument fehlt. |
-| 8 – Karte | Nicht begonnen | Bewusst außerhalb des MVP. | Nur nach formaler Scope-Freigabe. |
-| 9 – Offline-/PWA-Politur | Implementiert und automatisiert geprüft | Kontrollierte Service-Worker-Aktivierung, Formularschutz auch tabübergreifend, Offline-/Stale-/Reconnect-UX, Shell-only-Cache-Audit und installierbare PNG-Icons sind vorhanden. Chromium- und WebKit-Projekte sind konfiguriert. | Manuelle Installation/Update/Offline-Abnahme auf echtem iPhone/Safari und unterstütztem Desktop-Safari fehlt. |
+| Schnitt | Stand | Noch offen |
+| --- | --- | --- |
+| 1 – PWA/Auth/Deployment | Produktiv für ein Konto | Zweites TOTP-Konto. Pages-Header und Free-Plan-Sessionlimits sind akzeptiert. |
+| 2 – Gemeinsame Reise/Realtime | Implementiert | Zweite Produktionsmitgliedschaft. |
+| 3 – Manuelle Ereignisse/Timeline | Implementiert, lokal geprüft | Manuelle Geräteabnahme. |
+| 4 – Privater Dokument-Upload | Implementiert, neuer Verifier nicht in Produktion | Kontrolliertes Function-/Migrations-Deploy. Kein externer Scanner. |
+| 5 – Dokumentextraktion | Worker produktiv; neue Fencing-/Preis-Migrationen nicht | OpenAI-Function-Secrets setzen, dann ausrollen. Weiches App-Budget, hartes OpenAI-Kontolimit. |
+| 6 – Kontroll-/Korrekturansicht | Implementiert, lokal geprüft | Originalvergleich auf Zielgeräten. |
+| 7 – Bestätigung/Timeline | Implementiert, DB-geprüft | Ein Produktions-Smoke mit beiden Konten. |
+| 8 – Karte | Nicht begonnen | Nur nach Scope-Freigabe. |
+| 9 – Offline-/PWA-Politur | Implementiert, lokal in Chromium/WebKit geprüft | iPhone/Safari bei Gelegenheit. |
 
-### Aktuelle Release-Blocker
+### Nächste Arbeit
 
-1. Zweites persönliches Produktionskonto einschließlich verifiziertem TOTP und zweiter aktiver Reisemitgliedschaft bereitstellen.
-2. Malware-Scanner/Isolationsanbieter und Datenschutzparameter festlegen, Secrets setzen und Upload-Verifier produktiv ausrollen.
-3. Hosting mit wirksamen Response-Headern wählen oder einen Header-fähigen Origin vor GitHub Pages setzen; `frame-ancestors` in HTML-Meta ist nicht wirksam.
-4. Den vollständigen synthetischen Produktions-Smoke-Test einschließlich Live-Extraktion und absichtlicher Worker-Unterbrechung durchführen.
-5. Echte iPhone-/Safari- und Desktop-Safari-Abnahme, Backup-/Restore-Probe und Rollbacknachweis dokumentieren.
-6. Fachliche Entscheidungen zu Dokument-/Kontolöschung, Aufbewahrung und Scanner-/Providerdaten abschließen.
-7. Für erzwungene Session-Timebox/Inaktivitätsgrenze und Supabase-Schutz gegen geleakte Passwörter entweder den kostenpflichtigen Supabase-Plan freigeben oder gleichwertige, getestete serverseitige Strategien spezifizieren.
+1. OpenAI-Function-Secrets in Supabase setzen (siehe Handoff).
+2. Diesen Branch nach gesetzten Secrets über `master` ausrollen.
+3. Zweites persönliches Konto mit TOTP und Mitgliedschaft anlegen.
+4. Einmal Upload, Extraktion und Bestätigung in Produktion prüfen.
 
-Der konkrete Release- und Recovery-Ablauf steht in [Deployment- und Betriebsrunbook](operations/deployment.md); Incident- und Datenlebenszyklusregeln stehen in [Incident- und Datenlebenszyklus-Runbook](operations/incidents-and-data-lifecycle.md).
+Dokumentlöschung, Backup-Probe und Supabase-Pro sind später optional.
 
 ## 1. Ziel und Lesart
 
@@ -77,8 +75,8 @@ Offene Entscheidungen werden nicht stillschweigend durch Implementierungsdetails
 | 1 | Zielumgebungen, GitHub-Pages-Verfügbarkeit im verwendeten Tarif, Produktionsorigin, Domains, E-Mail-/Passwort- und TOTP-MFA-Konfiguration, Session-Laufzeiten, CSP-/Security-Header-Auslieferung und administrativer Kontowiederherstellungsweg |
 | 2 | Physische Form von `User`, `Trip` und `TripMember`, ID-Variante sowie administrativer Seed-Prozess für genau zwei Konten, eine aktive Reise und zwei Mitgliedschaften; alternativ formale Freigabe einer kontrollierten Bootstrap-Operation |
 | 3 | Physische Form der TravelItem-Details und wiederholbaren Gruppen, gemischte Zeitpräzision, Zeitzonen-Eingabe, Revisionsaufbewahrung und Zählweise von Tombstones |
-| 4 | Wirksame Datei-/Mengenlimits, sichere Prüf- und Malware-Scan-Lösung, Aufbewahrung verworfener Originale, gesondertes Dokumentlöschrecht und Tombstone-Umfang |
-| 5 | Aktuell unterstützte OpenAI-Eingaben und Modellgrenzen, Modell, Providerregion/-aufbewahrung, Löschung temporärer Providerdateien, Preisumrechnung, Budgetverantwortung und Edge-Function-Limits mit repräsentativen Dateien |
+| 4 | Wirksame Datei-/Mengenlimits, lokale Signatur-/Strukturprüfung, Aufbewahrung verworfener Originale, gesondertes Dokumentlöschrecht und Tombstone-Umfang. Kein externer Scanner. |
+| 5 | Modell, Preisumrechnung als weiche Run-Reservierung, hartes Limit im OpenAI-Konto, Löschung temporärer Providerdateien |
 | 6 | UX-Regel für Teilstrecken-Gruppierung, Kandidatenaufbewahrung und Wirkung von „Verwerfen“ |
 | 7 | Auswirkung einer TravelItem-Löschung auf Verknüpfungen sowie Regel, ob und wie ein Kandidat ein bestehendes TravelItem aktualisieren darf |
 | 8 | Formale Änderung des Produktumfangs, Karten-/Tile-Anbieter oder Self-Hosting, Datenschutzfolgen, Datenübermittlung, Lizenz/Attribution, Kosten und CSP-Erweiterung |
@@ -292,7 +290,7 @@ Beide Personen können Reisebestätigungen als private Originale hochladen, dere
 ### Abhängigkeiten
 
 - Schnitt 3 ist abgeschlossen; Upload kann technisch nach Schnitt 2 beginnen, die nummerierte Release-Reihenfolge bleibt jedoch verbindlich.
-- Datei-/Mengenlimits, versionierte wirksame Positivliste, Signatur-/Containerprüfung, Malware-Scan oder belastbarer Isolationspfad sowie Dokumentaufbewahrung sind entschieden.
+- Datei-/Mengenlimits, versionierte wirksame Positivliste, Signatur-/Containerprüfung und Dokumentaufbewahrung sind entschieden. Ein externer Malware-Scanner ist für diese private Nutzung nicht vorgesehen.
 - Ein privater Supabase-Storage-Bucket und die kontrollierte serverseitige Reservierung des Objektpfads sind vorbereitet.
 - Backup-, Restore-, Export- und Löschverfahren sind vor Nutzung realer Dokumente festgelegt.
 
@@ -301,7 +299,7 @@ Beide Personen können Reisebestätigungen als private Originale hochladen, dere
 - Upload-Auswahl, Warteschlange, unabhängige Dateistatus, Dokumentliste und Dokumentansicht
 - PostgreSQL: `Document`, Upload-Idempotenz, Version, Status, Prüfsumme und sichere Fehlercodes
 - Privater Supabase Storage, Quarantäne, unveränderliche Objektpfade und Storage-Policies
-- Serverseitige Dateiprüfung, Malware-Scan/Isolation, Limits und kontrollierter Dokumentabschluss
+- Serverseitige Dateiprüfung, Limits und kontrollierter Dokumentabschluss
 - Authentifizierter Download, kurzlebige lokale Blob-URL und sichere Attachment-/Vorschau-Regeln
 - Realtime-Invalidierung für Dokumentstatus; noch keine OpenAI-Komponente
 
@@ -311,7 +309,7 @@ Beide Personen können Reisebestätigungen als private Originale hochladen, dere
 - Servergrenzen gelten initial mit höchstens 20 MiB je Original, 50 MiB je Auswahl, zwei parallelen Uploads je Nutzer und 50 nicht gelöschten Originalen je Reise, sofern die vorangehende Entscheidung sie nicht weiter absenkt.
 - Vor dem Upload wird eine Document-Zeile idempotent angelegt und ein zufälliger, serverseitig gebundener Objektpfad reserviert. Originaldateiname und fachliche Daten erscheinen nicht im Pfad.
 - Das Original wird unverändert gespeichert und nach erfolgreichem Abschluss nicht überschrieben; eine neue Version ist ein neues Document.
-- Erst nach Größen-, Signatur-, Struktur-, Aktivinhalt-, Pixel-/Dekompressions-, Prüfsummen- und Malware-/Isolationsprüfung wird ein Dokument `available` und für das zweite Mitglied abrufbar.
+- Erst nach Größen-, Signatur-, Struktur-, Aktivinhalt-, Pixel-/Dekompressions- und Prüfsummenprüfung wird ein Dokument `available` und für das zweite Mitglied abrufbar.
 - Nicht unterstützte, beschädigte, passwortgeschützte, aktive, manipulierte oder zu große Dateien erhalten einen stabilen, handlungsorientierten Fehler und werden nicht freigegeben.
 - Beide Mitglieder können `available`-Originale authentifiziert öffnen oder herunterladen. Ein Vorschaufehler lässt den sicheren Download verfügbar.
 - Upload, Fehler oder Retry erzeugen kein Timeline-Ereignis und verändern kein vorhandenes TravelItem.
@@ -383,7 +381,7 @@ Eine Person kann ein freigegebenes Original zur Analyse starten und anschließen
 - Feldwerte bewahren `value`, Provenance, Confidence und kurze Evidence/Fundstelle. `unknown` bleibt explizit `null`; Widersprüche und Unsicherheiten bleiben sichtbar.
 - Freitext, mehrere JSON-Werte, Reasoning, Schemaabweichung oder semantisch ungültige Ausgabe erzeugen keine Teilpersistenz und einen stabilen inhaltsfreien Fehlercode.
 - Technisch retry-fähige Fehler erhalten höchstens zwei automatische Versuche mit Backoff. Fachliche Fehler erzeugen keinen kostenpflichtigen Retry-Loop.
-- Uploads/Extraktionen beachten Tageslimits und das atomar reservierte monatliche Gesamtbudget von 20 EUR Gegenwert. Bei 100 % oder Kill Switch starten keine neuen Provideraufrufe; manuelle Funktionen bleiben verfügbar.
+- Uploads/Extraktionen beachten Tageslimits und das atomar reservierte weiche monatliche Anwendungsbudget. `OPENAI_MAX_RUN_COST_MICRO_EUR` ist eine einfache Run-Reservierung; das OpenAI-Kontolimit ist die harte Kostenschranke. Bei 100 % oder Kill Switch starten keine neuen Provideraufrufe; manuelle Funktionen bleiben verfügbar.
 - Temporäre OpenAI-Dateien werden nach Abschluss bestmöglich gelöscht; vollständige Modellantwort, Prompt, Dokumentinhalt und Reasoning werden nicht persistiert oder geloggt.
 
 ### Automatisierte Tests

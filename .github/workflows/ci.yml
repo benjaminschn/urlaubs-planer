@@ -97,12 +97,9 @@ jobs:
             OPENAI_EXTRACTION_MAX_OUTPUT_TOKENS
             OPENAI_EXTRACTION_MODEL
             OPENAI_INPUT_MICRO_EUR_PER_TOKEN
-            OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN
             OPENAI_MAX_RUN_COST_MICRO_EUR
             OPENAI_OUTPUT_MICRO_EUR_PER_TOKEN
             OPENAI_PRICING_VERSION
-            MALWARE_SCAN_TOKEN
-            MALWARE_SCAN_URL
           )
           present="$(supabase secrets list --project-ref "$SUPABASE_PROJECT_ID" --output json | jq -r '.[].name')"
           for secret_name in "${required[@]}"; do
@@ -191,17 +188,31 @@ jobs:
             echo "Extraction-Worker-Healthcheck war nicht erfolgreich." >&2
             exit 1
           fi
+      - name: Authentifizierten Dokument-Cleanup-Worker prüfen
+        run: |
+          response="$(curl --fail --silent --show-error --max-time 20 \
+            "https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/process-document-storage-cleanups" \
+            -H "Content-Type: application/json" \
+            -H "X-Extraction-Worker-Token: ${EXTRACTION_WORKER_TOKEN}" \
+            --data '{"health_check":true}')"
+          if ! jq -e '.worker == "document_storage_cleanup" and .healthy == true' <<<"$response" >/dev/null; then
+            echo "Dokument-Cleanup-Worker-Healthcheck war nicht erfolgreich." >&2
+            exit 1
+          fi
       - name: Extraction-Worker-Schedule erst nach Worker-Deployment aktivieren
         run: supabase db query --linked "select private.install_extraction_worker_schedule()"
+      - name: Dokument-Cleanup-Schedule erst nach Worker-Deployment aktivieren
+        run: supabase db query --linked "select private.install_document_storage_cleanup_schedule()"
       - name: Cron- und pg_net-Ausführung prüfen
         run: |
           for attempt in {1..12}; do
-            if supabase db query --linked --file scripts/check-extraction-worker-schedule.sql; then
+            if supabase db query --linked --file scripts/check-extraction-worker-schedule.sql \
+              && supabase db query --linked --file scripts/check-document-storage-cleanup-schedule.sql; then
               exit 0
             fi
             if [[ "$attempt" -lt 12 ]]; then sleep 10; fi
           done
-          echo "Extraction-Worker wurde nicht erfolgreich durch Cron/pg_net ausgeführt." >&2
+          echo "Extraction- oder Cleanup-Worker wurde nicht erfolgreich durch Cron/pg_net ausgeführt." >&2
           exit 1
 
   deploy:

@@ -38,12 +38,19 @@ jobs:
       - name: Supabase Auth-Gesundheit prüfen
         env:
           SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: |
           if [[ ! "$SUPABASE_URL" =~ ^https://[a-z0-9]+\.supabase\.co$ ]]; then
             echo "Repository-Variable VITE_SUPABASE_URL fehlt oder ist ungültig." >&2
             exit 1
           fi
-          curl --fail --silent --show-error --location --retry 3 --retry-all-errors --max-time 20 "$SUPABASE_URL/auth/v1/health" >/dev/null
+          if [[ ! "$SUPABASE_PUBLISHABLE_KEY" =~ ^sb_publishable_[A-Za-z0-9_-]{20,}$ ]]; then
+            echo "Repository-Variable VITE_SUPABASE_PUBLISHABLE_KEY fehlt oder ist ungültig." >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors --max-time 20 \
+            "$SUPABASE_URL/auth/v1/health" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" >/dev/null
       - name: Authentifizierten Extraction-Worker prüfen
         run: |
           if [[ ! "$EXTRACTION_WORKER_TOKEN" =~ ^[a-f0-9]{64}$ ]]; then
@@ -56,7 +63,22 @@ jobs:
             -H "X-Extraction-Worker-Token: ${EXTRACTION_WORKER_TOKEN}" \
             --data '{"health_check":true}')"
           jq -e '.healthy == true' <<<"$response" >/dev/null
+      - name: Authentifizierten Dokument-Cleanup-Worker prüfen
+        run: |
+          response="$(curl --fail --silent --show-error --max-time 20 \
+            "https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/process-document-storage-cleanups" \
+            -H "Content-Type: application/json" \
+            -H "X-Extraction-Worker-Token: ${EXTRACTION_WORKER_TOKEN}" \
+            --data '{"health_check":true}')"
+          if ! jq -e '.worker == "document_storage_cleanup" and .healthy == true' <<<"$response" >/dev/null; then
+            echo "Dokument-Cleanup-Worker-Healthcheck war nicht erfolgreich." >&2
+            exit 1
+          fi
       - name: Jüngste Cron- und pg_net-Ausführung prüfen
         run: |
           supabase link --project-ref "$SUPABASE_PROJECT_ID"
           supabase db query --linked --file scripts/check-extraction-worker-schedule.sql
+      - name: Document-Cleanup-Queue auf terminale oder veraltete Arbeit prüfen
+        run: |
+          supabase db query --linked --file scripts/check-document-storage-cleanup-schedule.sql
+          supabase db query --linked --file scripts/check-document-storage-cleanup-health.sql

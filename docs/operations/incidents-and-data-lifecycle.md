@@ -1,12 +1,13 @@
 # Incident- und Datenlebenszyklus-Runbook
 
-**Stand:** 13. August 2026
+**Stand:** 15. August 2026
+**Aktueller Betriebsstand:** [Handoff](handoff.md)
 
 ## Prioritäten
 
 - **P0:** fremde Reisedaten sichtbar, privilegiertes Secret öffentlich, unbestätigter Kandidat automatisch veröffentlicht.
 - **P1:** Auth komplett ausgefallen, Produktionsprojekt pausiert, Dokumente ungeschützt abrufbar, Queue produziert unkontrollierte Kosten.
-- **P2:** Teilfunktion ausgefallen, Realtime unterbrochen, Scanner/OpenAI nicht verfügbar, PWA-Update festgefahren.
+- **P2:** Teilfunktion ausgefallen, Realtime unterbrochen, OpenAI nicht verfügbar, PWA-Update festgefahren.
 
 Bei P0/P1 zuerst weitere Exposition oder Kosten stoppen, dann Beweise sichern. Keine vertraulichen Dokumentinhalte, Tokens, Signed URLs, Dateinamen oder Modellantworten in Ticket, Chat oder Logs kopieren.
 
@@ -19,13 +20,11 @@ Bei P0/P1 zuerst weitere Exposition oder Kosten stoppen, dann Beweise sichern. K
 5. Auth-, Storage-, Function- und Provider-Logs nur nach IDs, Zeitpunkt, Größenklasse und sicheren Fehlercodes untersuchen.
 6. Auswirkung, Rotationszeitpunkt und geprüfte Artefakte dokumentieren.
 
-## Dokument- und Scanner-Incident
+## Dokument-Incident
 
-- Scannerfehler ist fail-closed: Dokument verbleibt im nicht abrufbaren Quarantänepfad und Status `uploaded`/`verification_unavailable`.
-- Bei Malwarefund wird der Blob gelöscht; nur minimale Metadaten und der sichere Ablehnungsgrund verbleiben.
+- Eine fehlgeschlagene lokale Prüfung belässt das Original in Quarantäne oder setzt es terminal auf `invalid`/`unsupported`.
+- Bei terminaler Ablehnung oder einem fehlgeschlagenen Upload wird der Blob über eine private, wiederholbare Cleanup-Queue gelöscht; nur minimale Metadaten und der sichere Ablehnungsgrund verbleiben. Ein fehlgeschlagenes sofortiges Löschen bleibt als `queued`-Aufgabe erhalten und wird vom Cleanup-Worker erneut versucht. Nach 20 erfolglosen Versuchen wird die Aufgabe deterministisch `failed` und muss über den Health-Check alarmiert und kontrolliert untersucht werden; sie wird nicht automatisch wiederbelebt.
 - Niemals einen Datensatz per Hand auf `available` setzen.
-- Vor Wiederholung zuerst Scannerstatus, Timeout, Token und SHA-256-Korrelation prüfen.
-- Externe Scanner-/Providerlogs müssen so konfiguriert sein, dass Dateibody und Authorization-Header nicht geloggt werden.
 
 ## Extraktions- und Kostenincident
 
@@ -37,7 +36,7 @@ Bei P0/P1 zuerst weitere Exposition oder Kosten stoppen, dann Beweise sichern. K
 
 ## Konto, Sitzung und Zugriff
 
-- Konto deaktivieren: `app_users.account_status = 'disabled'` kontrolliert administrativ ändern und alle Auth-Sitzungen widerrufen.
+- Konto deaktivieren: `public.users.account_status = 'disabled'` kontrolliert administrativ ändern und alle Auth-Sitzungen widerrufen. Das ist kein PWA- oder Client-RPC-Flow.
 - MFA-/Kontowiederherstellung verlangt frische Identitätsprüfung außerhalb der PWA.
 - Der zweite Nutzer darf nicht über `user_metadata`, Client-RPCs oder direkte Tabellenwrites ersetzt werden.
 - Gesamtexport oder Kontolöschung ist kein normaler PWA-Flow. Vor Durchführung Umfang, zweite betroffene Person, Dokument-/Providerdaten und Backupfolgen schriftlich freigeben.

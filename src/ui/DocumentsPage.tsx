@@ -218,7 +218,7 @@ export function DocumentsPage() {
                   </div>
                   <div className="document-card-actions">
                     {document.status === "available" ? <button className="secondary-button" type="button" onClick={() => void openDocument(document)}>Original öffnen</button> : null}
-                    {document.status === "verification_pending" ? <button className="secondary-button" type="button" onClick={() => void retryDocumentVerification(document)}>Sicherheitsprüfung erneut versuchen</button> : null}
+                    {document.status === "verification_pending" || document.status === "verifying" ? <button className="secondary-button" type="button" onClick={() => void retryDocumentVerification(document)}>Sicherheitsprüfung erneut versuchen</button> : null}
                     {document.status === "available" ? <button className="primary-button" type="button" onClick={() => void processDocument(document)} disabled={isActive}>{isActive ? "Verarbeitung läuft …" : "Verarbeitung starten"}</button> : null}
                   </div>
                 </article>

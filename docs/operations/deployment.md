@@ -1,7 +1,8 @@
 # Deployment- und Betriebsrunbook
 
-**Stand:** 13. August 2026
+**Stand:** 15. August 2026
 **Produktion:** `https://benjaminschn.github.io/urlaubs-planer/` und Supabase-Projekt `pvqawohdklzxpruodydy`
+**Aktueller Stand und nächste Schritte:** [Handoff](handoff.md)
 
 ## Release-Gate
 
@@ -42,30 +43,18 @@ Erforderliche Supabase-Function-Secrets werden vor dem Function-Deployment namen
 - `OPENAI_EXTRACTION_MODEL`
 - `OPENAI_EXTRACTION_MAX_OUTPUT_TOKENS`
 - `OPENAI_INPUT_MICRO_EUR_PER_TOKEN`
-- `OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN`
 - `OPENAI_OUTPUT_MICRO_EUR_PER_TOKEN`
-- `OPENAI_MAX_RUN_COST_MICRO_EUR`
+- `OPENAI_MAX_RUN_COST_MICRO_EUR` (weiche Run-Reservierung in µEUR; das OpenAI-Kontolimit ist die harte Schranke)
 - `OPENAI_PRICING_VERSION`
 - `EXTRACTION_WORKER_TOKEN`
-- `MALWARE_SCAN_URL`
-- `MALWARE_SCAN_TOKEN`
+
+`OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN` ist optional; fehlt es, gilt der uncached Inputpreis. Es gibt keinen externen Malware-Scanner.
 
 Secrets werden nie als `VITE_*` gesetzt und nie an den Frontend-Build übergeben.
 
-## Malware-Scanner-Vertrag
+## Dokumentprüfung
 
-`verify-document-upload` gibt kein Dokument frei, solange die Schadsoftwareprüfung nicht eindeutig `clean` meldet. Der Scanner muss per HTTPS erreichbar sein und folgenden Vertrag erfüllen:
-
-- Request: `POST MALWARE_SCAN_URL`
-- Header: `Authorization: Bearer <MALWARE_SCAN_TOKEN>`
-- Header: tatsächlicher `Content-Type` und `X-Content-SHA256`
-- Body: rohe Dokumentbytes, maximal 20 MiB
-- Erfolgsantwort für Bilder/Text: HTTP 2xx mit JSON `{ "clean": true }` oder `{ "clean": false }`
-- PDF/OOXML werden nur freigegeben, wenn derselbe isolierte Dienst zusätzlich `{ "passive": true }` nach gehärtetem Parse/CDR meldet. Ein bloßes Malware-`clean` reicht für Containerformate ausdrücklich nicht.
-- Timeout, nicht-2xx oder jede andere Antwort: Prüfung nicht verfügbar; das Original bleibt privat in Quarantäne und erhält niemals den Status `available`
-- `clean: false`: Blob wird gelöscht, Metadaten werden als `invalid`/`malware_detected` markiert
-
-Vor der Scanner-/Parser-Auswahl sind Anbieterregion, Aufbewahrung, Log-Redaktion, Löschung, Verfügbarkeit, 20-MiB-Limit, CDR-/Parser-Fähigkeit und Kosten schriftlich zu prüfen. Der Token darf nur als Supabase-Secret vorliegen. Die lokale Byteprüfung ist nur eine Vorfilterung und darf nicht als vollständiger passiver PDF-/OOXML-Parser beschrieben werden.
+`verify-document-upload` gibt ein Original frei, wenn die lokale Größen-, Signatur-, Struktur- und Ressourcenprüfung besteht. Abgelehnte Dateien bleiben `invalid`/`unsupported`; fehlgeschlagene Uploads bleiben `upload_failed`, bis der private Cleanup-Worker den Quarantäne-Blob gelöscht hat. Erst danach darf der Retry-RPC wieder `uploading` herstellen. Nach 20 erfolglosen Cleanup-Versuchen wird die Aufgabe terminal `failed` und vom Production-Health-Check gemeldet. Es gibt keinen externen Scanner- oder CDR-Vertrag.
 
 ## Automatischer Ausrollweg
 
@@ -77,7 +66,7 @@ Bei Push auf `master`/`main` führt CI diese Reihenfolge aus:
 4. Auth-/Projektkonfiguration ausrollen;
 5. Worker-Credential als Function-Secret und in Vault provisionieren;
 6. alle versionierten Edge Functions ausrollen, `ACTIVE` und den authentifizierten Worker-Healthcheck verifizieren;
-7. erst danach den Cron-Job aktivieren und eine erfolgreiche Cron-/`pg_net`-Ausführung abwarten;
+7. erst danach den Cron-Job aktivieren und eine erfolgreiche Cron-/`pg_net`-Ausführung abwarten sowie den read-only Cleanup-Queue-Health-Check ausführen;
 8. unveränderliches Pages-Artefakt bauen und veröffentlichen;
 9. öffentliche Seite und Manifest abrufen.
 
@@ -86,7 +75,7 @@ Bei Push auf `master`/`main` führt CI diese Reihenfolge aus:
 - Frontend: vorherigen guten Commit erneut über den normalen Workflow ausrollen. Kein manuelles Überschreiben des Pages-Artefakts.
 - Edge Functions: die Function-Dateien des vorherigen guten Commits mit der dort gepinnten CLI-Version erneut deployen.
 - Datenbank: keine destruktive Down-Migration. Fehler werden durch eine neue, vorwärtsgerichtete Korrekturmigration behoben. Vor einer destruktiven Korrektur zuerst Backup-/Restore-Möglichkeit und exakte Zielzeilen prüfen.
-- Scanner-Störung: Scanner nicht umgehen. Upload bleibt in Quarantäne; bestehende freigegebene Dokumente und manuelle Reiseplanung bleiben verfügbar.
+- Prüf-Störung: Upload bleibt in Quarantäne oder wird nach statischer Ablehnung gelöscht; bestehende freigegebene Dokumente und manuelle Reiseplanung bleiben verfügbar.
 - OpenAI-Störung: Worker aussetzen beziehungsweise nicht erneut anstoßen. Ein Lease ohne begonnenen Responses-Aufruf darf begrenzt wiederaufgenommen werden. Ein abgelaufener Lease nach gesetztem Provider-Fence wird dagegen nie automatisch wiederholt und konservativ bis zur reservierten Obergrenze abgerechnet. Keine Kandidaten manuell als Modellresultat in die DB schreiben.
 
 ## Wiederherstellung eines pausierten Supabase-Projekts
@@ -98,7 +87,7 @@ Bei Push auf `master`/`main` führt CI diese Reihenfolge aus:
 5. Migrationen/Functions nicht blind erneut ausrollen; zuerst lokalen Commit, Remote-Migrationsstand und erwartete Function-Versionen vergleichen.
 6. Auth-Health, Anmeldung, Reisekopf, Dokumentliste und einen ungefährlichen manuellen Timeline-Read prüfen.
 
-Der tägliche Workflow `Production health` prüft Pages, Manifest, Supabase Auth, den authentifizierten Worker sowie eine höchstens zehn Minuten alte erfolgreiche Cron- und `pg_net`-Ausführung. Eine fehlgeschlagene Action ist ein Incident-Signal. Ein kostenpflichtiges Upgrade zur Vermeidung von Inaktivität ist eine separate finanzielle Entscheidung und kein automatischer Recovery-Schritt.
+Der tägliche Workflow `Production health` prüft Pages, Manifest, Supabase Auth, den authentifizierten Worker sowie eine höchstens zehn Minuten alte erfolgreiche Cron- und `pg_net`-Ausführung. Zusätzlich meldet ein read-only SQL-Check terminale Cleanup-Zeilen, veraltete `queued`-Arbeit und abgelaufene `processing`-Leases. Eine fehlgeschlagene Action ist ein Incident-Signal. Ein kostenpflichtiges Upgrade zur Vermeidung von Inaktivität ist eine separate finanzielle Entscheidung und kein automatischer Recovery-Schritt.
 
 ## Einmaliges Drift-Reparaturfenster vom 13. August 2026
 
@@ -116,8 +105,9 @@ Die Produktions-Advisors melden zusätzlich bewusst dokumentierte Warnungen. Die
 - Beide vorab eingerichteten Konten melden sich mit TOTP an und sehen dieselbe Reise.
 - Reiseänderung auf Gerät A wird auf Gerät B nach Invalidierung/Reload sichtbar.
 - Ein manuelles Ereignis wird erstellt, bearbeitet und fachlich gelöscht.
-- Ein passives Testdokument durchläuft statische Prüfung und Scanner; Download erfolgt nur über authentifizierten Storage-Zugriff.
+- Ein Testdokument durchläuft die lokale Prüfung; Download erfolgt nur über authentifizierten Storage-Zugriff.
 - Eine absichtlich abgelehnte Testdatei wird nie freigegeben.
+- Ein simulierter Upload-Fehler wird erst nach erfolgreichem Cleanup-Worker-Lauf erneut hochladbar; ein terminaler Cleanup-Fehler bleibt sichtbar und löst den Health-Check aus.
 - Eine Extraktion wird gequeued, vom Worker geleast und endet deterministisch; der Kandidat erscheint nicht ohne Bestätigung in der Timeline.
 - Kandidat wird feldweise korrigiert und genau einmal bestätigt.
 - Offline werden keine Mutationen als gespeichert dargestellt; nach Reconnect wird der Serverstand neu geladen.

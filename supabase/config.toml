@@ -15,6 +15,9 @@ verify_jwt = true
 [functions.process-document-extractions]
 verify_jwt = false
 
+[functions.process-document-storage-cleanups]
+verify_jwt = false
+
 [functions.verify-document-upload]
 verify_jwt = true
 
@@ -29,7 +32,9 @@ enable_signup = false
 enable_anonymous_sign_ins = false
 
 [auth.email]
-enable_signup = false
+# Keep the email/password provider available for administratively created users.
+# Global auth.enable_signup remains false, so public registration stays closed.
+enable_signup = true
 
 [auth.rate_limit]
 sign_in_sign_ups = 5

@@ -182,7 +182,7 @@ Dateiendung und Browser-MIME sind Hinweise, keine Beweise. Vor Extraktion und Fr
 
 Parser arbeiten ohne Ausführung eingebetteter Makros, JavaScript, Links oder externer Ressourcen und mit festen Zeit-, Speicher- und Dekompressionslimits. Bei Signaturkonflikt, Polyglot-Verdacht, beschädigter Struktur, eingebettetem ausführbarem Inhalt oder Ressourcenlimit wird die Datei mit stabilem Fehlercode auf `invalid` beziehungsweise `unsupported` gesetzt und nicht an OpenAI gesendet. Kann im gewählten Edge-Function-Rahmen keine ausreichende Prüfung eines Formats gewährleistet werden, bleibt dieses Format gesperrt, bis ein isolierter Prüfpfad existiert.
 
-Ein Malware-Scan ist vor Freigabe an das zweite Mitglied vorzusehen. Bis ein belastbarer Scanner integriert ist, werden nur die oben genannten passiven Kernformate akzeptiert und riskante Dateien nicht inline geöffnet. Ein Scan ersetzt weder Signaturprüfung noch sichere Darstellung.
+Für diese private Zwei-Personen-Nutzung gibt es keinen externen Malware-Scanner oder CDR-Dienst. Freigabe erfolgt nach der lokalen Signatur-, Struktur- und Ressourcenprüfung. Riskante Dateien werden nicht inline geöffnet. Ein Scan würde weder Signaturprüfung noch sichere Darstellung ersetzen.
 
 ## 8. Edge Function, OpenAI-Key und Prompt Injection
 
@@ -234,11 +234,13 @@ Limits werden atomar serverseitig pro Auth-ID, Reise, Dokument und IP-Adresse ge
 | Candidate-Bestätigungen | 30 je Nutzer pro Stunde; immer idempotent und versionsgeprüft |
 | Signed-URL-Erzeugung | 30 je Nutzer pro 15 Minuten |
 
-Für OpenAI gilt ein hartes Anwendungsbudget von **20 EUR Gegenwert pro Kalendermonat** für das gesamte MVP-Projekt. Maßgeblich ist der Betrag in der tatsächlichen Provider-Abrechnungswährung. Vor einem Aufruf reserviert die Anwendung atomar dessen konservativ geschätzte Maximalkosten; eine parallele Anfrage kann das Restbudget daher nicht überziehen. Nach jedem erfolgreichen Responses-API-HTTP-Aufruf wird die anhand der Usage berechnete Providerbelastung sofort, idempotent und vor jeder Schema-/Semantikprüfung verbucht. Fehlt in einer möglicherweise kostenpflichtigen HTTP-200-Antwort eine verwertbare Usage, wird konservativ der noch nicht verbuchte Reservierungsrest berechnet. Ein späterer Validierungs- oder Speicherfehler darf Kosten daher nicht auf null zurückrollen.
+Die Anwendung hält ein weiches monatliches Aufnahmebudget von **20 EUR Gegenwert** (`20_000_000` µEUR). Vor einem Aufruf reserviert sie atomar `OPENAI_MAX_RUN_COST_MICRO_EUR`; eine parallele Anfrage kann das Restbudget daher nicht überziehen. Neue Starts stoppen bei 100 %. Das **harte** Kostenlimit ist das Guthaben- und Nutzungslimit des privaten OpenAI-Kontos, nicht die Anwendungsreservierung.
+
+Nach jedem erfolgreichen Responses-API-HTTP-Aufruf wird die anhand der Usage berechnete Providerbelastung sofort, idempotent und vor jeder Schema-/Semantikprüfung verbucht. Fehlt `OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN`, gilt der uncached Inputpreis. Fehlt in einer möglicherweise kostenpflichtigen HTTP-200-Antwort eine verwertbare Usage, wird konservativ der noch nicht verbuchte Reservierungsrest berechnet. Ein späterer Validierungs- oder Speicherfehler darf Kosten daher nicht auf null zurückrollen.
 
 Extraktions-Runs bilden eine dauerhafte Queue. Nur der interne Worker kann mit einem getrennten, in Function-Secrets und Vault provisionierten Credential einen fälligen Run beanspruchen. Claims verwenden kurze Leases und `SKIP LOCKED`; abgelaufene Leases werden deterministisch zurückgeführt. Automatische Wiederholung ist auf insgesamt drei Provider-Versuche begrenzt und respektiert dieselbe Kostenreservierung.
 
-Bei 50 %, 75 % und 90 % wird administrativ gewarnt. Bei 100 % startet keine neue Extraktion; Upload, manuelle Erfassung, Prüfung vorhandener Kandidaten und Dokumentabruf bleiben verfügbar. Ein Override ist nur administrativ, zeitlich begrenzt und protokolliert möglich. Das OpenAI-Projektbudget und Provider-Kostenwarnungen bilden eine zweite Schutzschicht. Preise und Budgetumrechnung werden versioniert konfiguriert und vor jeder Reise geprüft.
+Bei 50 %, 75 % und 90 % wird administrativ gewarnt. Bei 100 % startet keine neue Extraktion; Upload, manuelle Erfassung, Prüfung vorhandener Kandidaten und Dokumentabruf bleiben verfügbar. Ein Override ist nur administrativ, zeitlich begrenzt und protokolliert möglich. Das OpenAI-Projektbudget und Provider-Kostenwarnungen bleiben die zweite Schutzschicht. Preise und Budgetumrechnung werden versioniert konfiguriert und vor jeder Reise geprüft.
 
 Ein globaler Kill Switch kann alle neuen Provideraufrufe stoppen, ohne bestehende Daten oder manuelle Funktionen zu beeinträchtigen.
 
@@ -327,7 +329,7 @@ Für Tests werden neben den zwei legitimen Konten ein drittes authentifiziertes 
 | AI-02 | Modell liefert schema-konforme, aber semantisch falsche IDs, zu viele Events, Geheimnisse oder widersprüchliche Zeiten | Servervalidierung verwirft atomar; keine Candidates beziehungsweise nur regelkonform unvollständige Candidates |
 | AI-03 | Provider liefert Freitext, mehrere JSON-Werte, Timeout, Teilantwort oder Reasoning | Keine Teilpersistenz; begrenzter idempotenter technischer Retry; bestehende TravelItems unverändert |
 | LIMIT-01 | Mehr als erlaubte Uploads/Extraktionen, parallele Starts oder Replay desselben Requests | `429`/stabiler Limitcode; höchstens ein Run/Ergebnis; keine zusätzlichen Kosten durch Replay |
-| BUDGET-01 | Parallele Requests würden zusammen das verbleibende Monatsbudget überschreiten | Kostenreservierung lässt nur zulässige Requests zu; danach harter Stopp ohne Beeinträchtigung manueller Funktionen |
+| BUDGET-01 | Parallele Requests würden zusammen das verbleibende Anwendungsbudget überschreiten | Kostenreservierung lässt nur zulässige Requests zu; danach weicher Anwendungsstopp. Das OpenAI-Kontolimit bleibt die harte Kostenschranke |
 | SECRET-01 | Produktionsbuild, Source Maps, Repository und Clientnetzwerk werden nach OpenAI-/Service-Key-Mustern geprüft | Kein Secret vorhanden; nur öffentliche Supabase-Konfiguration im Frontend |
 | LOG-01 | Fehler mit Dateiname, Buchungsnummer, Token, Signed URL und Dokumentanweisung wird provoziert | Logs enthalten nur IDs, Größenklasse und sicheren Fehlercode; alle vertraulichen Werte fehlen |
 | DEVICE-01 | Sitzung wird auf Gerät A widerrufen; dort werden API, Storage, Realtime und Edge Function erneut genutzt | Refresh scheitert; spätestens nach Access-Token-Ablauf kein Zugriff; sensible Funktionen bereits durch Sitzungsprüfung gesperrt |
@@ -343,7 +345,6 @@ Die folgenden fachlichen Punkte bleiben in den Grundlagen bewusst offen und müs
 - Aufbewahrung eines Originals nach verworfenem Candidate und Behandlung seiner Korrekturen;
 - Nutzerrecht zur gesonderten Dokumentlöschung und Umfang eines zulässigen Tombstones;
 - endgültige physische Form der TravelItem-Kindtabellen und damit ihre konkreten Policy-Pfade;
-- Scanner-/Isolationslösung für weitere, nicht passive Dateiformate;
 - konkrete Provider-Aufbewahrung und sichere Löschung temporärer OpenAI-Dateien;
 - Frist und Verantwortlicher für Kontolöschung sowie Aufbewahrung inhaltsfreier Sicherheitslogs.
 

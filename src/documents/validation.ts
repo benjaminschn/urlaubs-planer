@@ -28,6 +28,7 @@ export const documentErrorMessages: Record<DocumentValidationCode | string, stri
   malware_detected: "Die Datei wurde durch die Schadsoftwareprüfung abgelehnt.",
   upload_failed: "Der Upload konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.",
   verification_unavailable: "Die Datei konnte noch nicht sicher geprüft werden. Bitte versuchen Sie es erneut.",
+  verification_attempts_exhausted: "Die Sicherheitsprüfung ist endgültig fehlgeschlagen. Bitte laden Sie die Datei erneut hoch.",
   document_limit: "Für diese Reise sind höchstens 50 Originaldokumente vorgesehen.",
   parallel_limit: "Es laufen bereits zwei Uploads. Der Upload wird nach Abschluss fortgesetzt.",
   forbidden: "Das Dokument ist nicht verfügbar.",

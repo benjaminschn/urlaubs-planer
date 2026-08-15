@@ -145,7 +145,7 @@ export function createFakeDocumentGateway(options: { tripId?: string; documents?
     async retryVerification(input) {
       const documents = readDocuments();
       const document = documents.find((candidate) => candidate.id === input.documentId && candidate.tripId === input.tripId);
-      if (!document || document.status !== "verification_pending") {
+      if (!document || (document.status !== "verification_pending" && document.status !== "verifying")) {
         return { kind: "unavailable", message: documentErrorMessage("verification_unavailable") };
       }
       const available = { ...document, status: "available" as const, errorCode: null, uploadedAt: new Date().toISOString(), version: document.version + 1 };
@@ -247,9 +247,37 @@ export function createFakeDocumentGateway(options: { tripId?: string; documents?
     }
   };
 
+  function seedDocument(document: Partial<Document> & Pick<Document, "id" | "status">) {
+    const now = new Date().toISOString();
+    const stored: StoredDocument = {
+      id: document.id,
+      tripId: document.tripId ?? tripId,
+      uploadedByUserId: document.uploadedByUserId ?? "member@example.test",
+      originalFileName: document.originalFileName ?? "dokument.pdf",
+      reportedContentType: document.reportedContentType ?? "application/pdf",
+      detectedContentType: document.detectedContentType ?? null,
+      byteSize: document.byteSize ?? 1024,
+      checksum: document.checksum ?? null,
+      storageObjectKey: document.storageObjectKey ?? `quarantine/${document.id}`,
+      status: document.status,
+      errorCode: document.errorCode ?? null,
+      version: document.version ?? 1,
+      createdAt: document.createdAt ?? now,
+      updatedAt: document.updatedAt ?? now,
+      uploadedAt: document.uploadedAt ?? null,
+      idempotencyKey: `seed-${document.id}`,
+      batchKey: "seed",
+      contentBase64: ""
+    };
+    writeDocuments([...readDocuments().filter((existing) => existing.id !== stored.id), stored]);
+    signal();
+    return stored;
+  }
+
   return {
     gateway,
     calls,
+    seedDocument,
     getDocuments: () => readDocuments(),
     getExtractionRuns: () => extractionRuns,
     mutateCandidateExternally(candidateId: string, payload: Record<string, unknown>) {

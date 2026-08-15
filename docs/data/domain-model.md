@@ -515,9 +515,12 @@ stateDiagram-v2
     [*] --> uploading
     uploading --> uploaded: Upload vollständig
     uploading --> upload_failed: Fehler/Abbruch
-    uploaded --> available: serverseitig geprüft
-    uploaded --> unsupported: Typ nicht verarbeitbar
-    uploaded --> invalid: beschädigt/passwortgeschützt/zu groß
+    uploaded --> verifying: Sicherheitsprüfung beansprucht
+    verifying --> available: serverseitig geprüft
+    verifying --> verification_pending: Prüfung fehlgeschlagen oder Lease abgelaufen
+    verifying --> unsupported: Typ nicht verarbeitbar
+    verifying --> invalid: beschädigt/abgelehnt/Versuche erschöpft
+    verification_pending --> verifying: erneuter Prüfanspruch
     upload_failed --> uploading: expliziter idempotenter Retry
     available --> deleted: gesonderte Dokumentlöschung
     unsupported --> deleted
@@ -525,7 +528,7 @@ stateDiagram-v2
     upload_failed --> deleted
 ```
 
-`deleted` ist terminal für dieselbe Document-ID. Ein erneuter Upload ist ein neues Document. Der Extraktionsstatus wird nicht in den Document-Status hineingemischt, sondern aus ExtractionRuns abgeleitet.
+`verifying` ist die beanspruchte lokale Dateiprüfung. `verification_pending` bleibt nach einem technischen Prüffehler oder abgelaufenem Lease im Quarantänepfad und zählt nicht gegen das parallele Uploadkontingent. `deleted` ist terminal für dieselbe Document-ID. Ein erneuter Upload ist ein neues Document. Der Extraktionsstatus wird nicht in den Document-Status hineingemischt, sondern aus ExtractionRuns abgeleitet.
 
 ### 9.2 ExtractionRun
 

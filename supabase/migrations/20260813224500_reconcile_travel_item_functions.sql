@@ -609,4 +609,3 @@ revoke execute on function private.validate_payload_schema(text, jsonb) from pub
 revoke execute on function private.upsert_location(uuid, uuid, jsonb, uuid) from public, anon, authenticated;
 revoke execute on function private.validate_transport_segments(text, jsonb) from public, anon, authenticated;
 revoke execute on function private.replace_travel_item_aggregate(uuid, uuid, jsonb, uuid, boolean) from public, anon, authenticated;
-

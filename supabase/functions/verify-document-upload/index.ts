@@ -3,8 +3,6 @@ import { validateDocumentBytes } from "../_shared/document-verification.ts";
 
 const bucket = "travel-documents";
 
-type MalwareScanResult = "clean" | "malware" | "unavailable";
-
 function requestOriginAllowed(request: Request): boolean {
   const requestOrigin = request.headers.get("origin");
   const configuredOrigin = Deno.env.get("APP_ORIGIN");
@@ -27,49 +25,6 @@ function corsHeaders(request: Request): HeadersInit {
 async function checksum(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
-}
-
-async function scanForMalware(
-  bytes: Uint8Array,
-  digest: string,
-  detectedContentType: string
-): Promise<MalwareScanResult> {
-  const scannerUrl = Deno.env.get("MALWARE_SCAN_URL");
-  const scannerToken = Deno.env.get("MALWARE_SCAN_TOKEN");
-  if (!scannerUrl || !scannerToken) return "unavailable";
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(scannerUrl);
-  } catch {
-    return "unavailable";
-  }
-  if (parsedUrl.protocol !== "https:") return "unavailable";
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
-  try {
-    const scanResponse = await fetch(parsedUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${scannerToken}`,
-        "Content-Type": detectedContentType,
-        "X-Content-SHA256": digest
-      },
-      body: bytes,
-      signal: controller.signal
-    });
-    if (!scanResponse.ok) return "unavailable";
-    const result = await scanResponse.json() as { clean?: unknown; passive?: unknown };
-    const needsHardenedPassiveParsing =
-      detectedContentType === "application/pdf" ||
-      detectedContentType.startsWith("application/vnd.openxmlformats-officedocument.");
-    if (result.clean === true && (!needsHardenedPassiveParsing || result.passive === true)) return "clean";
-    if (result.clean === false) return "malware";
-    return "unavailable";
-  } catch {
-    return "unavailable";
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 function response(body: unknown, status: number, headers: HeadersInit): Response {
@@ -134,38 +89,13 @@ Deno.serve(async (request) => {
       if (rejected !== true) return response({ code: "verification_unavailable" }, 409, headers);
       const { error: removeError } = await serviceClient.storage.from(bucket).remove([document.storage_object_key]);
       if (removeError) return response({ code: "verification_cleanup_pending" }, 503, headers);
+      await serviceClient.rpc("complete_document_storage_cleanup_for_document", {
+        p_document_id: document.id
+      });
       return response({ code: validation.code }, 422, headers);
     }
 
     const digest = await checksum(bytes);
-    const scanResult = await scanForMalware(bytes, digest, validation.detectedContentType);
-    if (scanResult === "malware") {
-      const { data: rejected } = await serviceClient.rpc("reject_document_verification", {
-        p_document_id: document.id,
-        p_lease_owner: leaseOwner,
-        p_expected_version: document.version,
-        p_status: "invalid",
-        p_error_code: "malware_detected"
-      });
-      if (rejected !== true) return response({ code: "verification_unavailable" }, 409, headers);
-      const { error: removeError } = await serviceClient.storage.from(bucket).remove([document.storage_object_key]);
-      if (removeError) return response({ code: "verification_cleanup_pending" }, 503, headers);
-      return response({ code: "malware_detected" }, 422, headers);
-    }
-    if (scanResult === "unavailable") {
-      const { data: deferred } = await serviceClient.rpc("defer_document_verification", {
-        p_document_id: document.id,
-        p_lease_owner: leaseOwner,
-        p_expected_version: document.version,
-        p_detected_content_type: validation.detectedContentType,
-        p_byte_size: bytes.byteLength,
-        p_checksum: digest,
-        p_error_code: "verification_unavailable"
-      });
-      if (deferred !== true) return response({ code: "verification_unavailable" }, 409, headers);
-      return response({ code: "verification_unavailable" }, 503, headers);
-    }
-
     const { data: published, error: publishError } = await serviceClient.rpc("publish_document_verification", {
       p_document_id: document.id,
       p_lease_owner: leaseOwner,

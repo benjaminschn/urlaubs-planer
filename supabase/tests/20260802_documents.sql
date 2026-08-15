@@ -78,6 +78,11 @@ select is(
   'Ein technischer Uploadfehler wird versionsgeprüft gespeichert'
 );
 select is((select status from public.documents where id = (select id from retry_document)), 'upload_failed', 'Ein fehlgeschlagener Upload bleibt für das hochladende Mitglied sichtbar');
+set local role postgres;
+update private.document_storage_cleanups
+set status = 'succeeded', lease_owner = null, lease_expires_at = null
+where document_id = (select id from retry_document);
+set local role authenticated;
 select is(
   (select version::int from public.prepare_document_upload_retry((select id from retry_document), 2)),
   3,

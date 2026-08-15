@@ -71,7 +71,8 @@ Deno.serve(async (request) => {
   const model = Deno.env.get("OPENAI_EXTRACTION_MODEL");
   const reservation = Number(Deno.env.get("OPENAI_MAX_RUN_COST_MICRO_EUR"));
   const inputPrice = Number(Deno.env.get("OPENAI_INPUT_MICRO_EUR_PER_TOKEN"));
-  const cachedInputPrice = Number(Deno.env.get("OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN"));
+  const cachedRaw = Deno.env.get("OPENAI_CACHED_INPUT_MICRO_EUR_PER_TOKEN");
+  const cachedInputPrice = cachedRaw === undefined || cachedRaw === "" ? inputPrice : Number(cachedRaw);
   const outputPrice = Number(Deno.env.get("OPENAI_OUTPUT_MICRO_EUR_PER_TOKEN"));
   const pricingVersion = Deno.env.get("OPENAI_PRICING_VERSION");
   if (!token || !supabaseUrl || !anonKey || !serviceRoleKey || !workerToken || !model || !pricingVersion

@@ -138,6 +138,34 @@ describe("private Dokumente", () => {
     expect(documents.getExtractionRuns()[0].candidates[0].canonicalPayload).toEqual(remotePayload);
   });
 
+  it("bietet die Sicherheitsprüfung für ausstehende und laufende Prüfungen erneut an", async () => {
+    const documents = createFakeDocumentGateway();
+    documents.seedDocument({
+      id: "44444444-4444-4444-8444-000000000001",
+      originalFileName: "pending.pdf",
+      status: "verification_pending",
+      errorCode: "verification_unavailable"
+    });
+    documents.seedDocument({
+      id: "44444444-4444-4444-8444-000000000002",
+      originalFileName: "verifying.pdf",
+      status: "verifying"
+    });
+    documents.seedDocument({
+      id: "44444444-4444-4444-8444-000000000003",
+      originalFileName: "exhausted.pdf",
+      status: "invalid",
+      errorCode: "verification_attempts_exhausted"
+    });
+    await signInAndOpenDocuments(documents.gateway);
+
+    expect(await screen.findByText("pending.pdf")).toBeInTheDocument();
+    expect(screen.getByText("verifying.pdf")).toBeInTheDocument();
+    expect(screen.getByText("exhausted.pdf")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Sicherheitsprüfung erneut versuchen" })).toHaveLength(2);
+    expect(screen.getByText("Die Sicherheitsprüfung ist endgültig fehlgeschlagen. Bitte laden Sie die Datei erneut hoch.")).toBeInTheDocument();
+  });
+
   it("verknüpft Validierungsfehler mit dem Feld und fokussiert es", async () => {
     const { user } = await signInAndOpenDocuments();
     await user.upload(screen.getByLabelText("Dateien auswählen"), new File(["%PDF-1.7\npassive\n%%EOF"], "fehler.pdf", { type: "application/pdf" }));

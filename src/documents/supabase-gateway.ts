@@ -302,15 +302,13 @@ export function createSupabaseDocumentGateway(client: SupabaseClient): DocumentG
       if (reservedDocument.status === "available") return { kind: "available", document: reservedDocument };
       let uploadDocument: Document | null = reservedDocument;
       if (reservedDocument.status === "upload_failed") {
-        const { error: removeError } = await client.storage.from(DOCUMENT_BUCKET).remove([reservedDocument.storageObjectKey]);
-        if (removeError) return { kind: "failed", document: reservedDocument, message: documentErrorMessage("upload_failed"), code: "upload_failed" };
         const { data: retryData, error: retryError } = await client.rpc("prepare_document_upload_retry", {
           p_document_id: reservedDocument.id,
           p_expected_version: reservedDocument.version
         });
         uploadDocument = mapDocument(firstRow(retryData));
         if (retryError || !uploadDocument || uploadDocument.status !== "uploading") {
-          return { kind: "unavailable", message: documentErrorMessage("upload_failed") };
+          return { kind: "failed", document: reservedDocument, message: documentErrorMessage("upload_failed"), code: "upload_failed" };
         }
       }
       if (uploadDocument.status !== "uploading") {
